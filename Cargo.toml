@@ -1,0 +1,6 @@
+[package]
+name = "yasl_compiler"
+version = "0.1.0"
+authors = ["thomas-ring <thomasjring@icloud.com>"]
+
+[dependencies]
