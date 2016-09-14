@@ -3,4 +3,9 @@ name = "yasl_compiler"
 version = "0.1.0"
 authors = ["thomas-ring <thomasjring@icloud.com>"]
 
+[[bin]]
+name = "yasl_compiler"
+path = "src/bin.rs"
+doc = false
+
 [dependencies]
