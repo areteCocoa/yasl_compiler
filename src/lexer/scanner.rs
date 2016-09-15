@@ -61,7 +61,8 @@ impl Scanner {
         let mut tokens = Vec::<Token>::new();
         let mut token_builder = TokenBuilder::new(self.column_number, self.line_number);
 
-        for c in line.chars() {
+        let mut chars = line.chars();
+        for c in chars {
             // Increment line and column
             if c == '\n' {
                 self.column_number = 0;
@@ -78,11 +79,25 @@ impl Scanner {
 
             match token {
                 Some(t) => {
-                    println!("TOKEN");
                     tokens.push(t);
                     token_builder = TokenBuilder::new(self.column_number, self.line_number)
                 },
                 None => {}
+            }
+
+            if pushback {
+                let p_results = token_builder.push_char(c);
+                token_builder = p_results.0;
+                let p_token = p_results.1;
+                // ignore pushback because it will not exist since there are no 0
+                // character tokens
+
+                match p_token {
+                    Some(p_t) => {
+                        tokens.push(p_t);
+                    },
+                    None => {}
+                };
             }
         }
 

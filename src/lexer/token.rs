@@ -29,6 +29,7 @@ pub enum TokenType {
     Plus,
     Minus,
     Star,
+    Equals,
 
     // Misc
     EOFile,
@@ -52,6 +53,7 @@ impl fmt::Display for TokenType {
             TokenType::Plus => write!(f, "PLUS"),
             TokenType::Minus => write!(f, "MINUS"),
             TokenType::Star => write!(f, "STAR"),
+            TokenType::Equals => write!(f, "EQUALS"),
             TokenType::EOFile => write!(f, "EOF"),
             TokenType::Invalid => write!(f, "Invalid"),
         }
@@ -122,7 +124,10 @@ impl TokenBuilder {
         self.token_state = self.token_state.next_state(c);
         let mut pushback = false;
 
-        self.lexeme.push(c);
+        match self.token_state {
+            TokenState::Start => self.lexeme = String::new(),
+            _ => {self.lexeme.push(c)}
+        }
 
         // Check if the state is now at accepted
         // Cases in this block are also responsible for pushing the character
@@ -141,13 +146,19 @@ impl TokenBuilder {
                     }
                 };
 
-                let result = Some(Token {
-                    token_type: self.final_type(),
-                    line: self.line,
-                    column: self.column,
-                    // Check if the action requires that we push back
-                    lexeme: final_lexeme
-                });
+
+                let result = match action {
+                    TokenAction::Ignore => None,
+                    _ => {
+                        Some(Token {
+                           token_type: self.final_type(),
+                           line: self.line,
+                           column: self.column,
+                           // Check if the action requires that we push back
+                           lexeme: final_lexeme
+                       })
+                    }
+                };
 
                 result
             },
@@ -250,7 +261,13 @@ impl TokenState {
                 } else if input == '.' || input == ';' {
                     TokenState::Accept(TokenAction::Accept, TokenType::Semicolon)
                 } else if input == '+' || input == '-' || input == '*' || input == '=' {
-                    TokenState::Accept(TokenAction::Accept, TokenType::Invalid)
+                    TokenState::Accept(TokenAction::Accept, match input {
+                        '+' => TokenType::Plus,
+                        '-' => TokenType::Minus,
+                        '*' => TokenType::Star,
+                        '=' => TokenType::Equals,
+                        _ => TokenType::Invalid
+                    })
                 } else if input == '/' {
                     TokenState::CommentSlashStart
                 } else if input == '{' {
