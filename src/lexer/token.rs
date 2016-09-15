@@ -12,15 +12,28 @@ use std::fmt;
 
 #[derive(Copy, Clone)]
 pub enum TokenType {
+    // Identifier
     Identifier,
+
+    // Keyword
+    Keyword,
+
+    // Numbers
     Number,
+
+    // String
+    String,
+
+    // Punctuation
     Semicolon,
     Plus,
     Minus,
     Star,
-    // TODO: Add other Token_Types
+
+    // Misc
     EOFile,
-    Unknown,
+
+    // Invalids
     Invalid
 }
 
@@ -28,14 +41,19 @@ impl fmt::Display for TokenType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             TokenType::Identifier => write!(f, "ID"),
+            TokenType::Keyword => {
+                write!(f, "KEYWORD")
+            },
             TokenType::Number => write!(f, "NUM"),
+            TokenType::String => {
+                write!(f, "STRING")
+            },
             TokenType::Semicolon => write!(f, "SEMI"),
             TokenType::Plus => write!(f, "PLUS"),
             TokenType::Minus => write!(f, "MINUS"),
             TokenType::Star => write!(f, "STAR"),
             TokenType::EOFile => write!(f, "EOF"),
-            TokenType::Unknown => write!(f, "Unknown"),
-            _ => write!(f, "Unhandled Token_Type for display implementation!"),
+            TokenType::Invalid => write!(f, "Invalid"),
         }
     }
 }
@@ -61,15 +79,7 @@ impl Token {
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.token_type);
-
-        if self.lexeme != "" {
-            write!(f, " {}", self.lexeme);
-        } else {
-            write!(f, " {}", self.token_type);
-        }
-
-        write!(f, " {}:{}", self.line, self.column)
+        write!(f, "{} {} {}:{}", self.token_type, self.lexeme, self.line, self.column)
     }
 }
 
@@ -83,7 +93,7 @@ pub struct TokenBuilder {
 impl TokenBuilder {
     pub fn new() -> TokenBuilder {
         TokenBuilder {
-            token_type: TokenType::Unknown,
+            token_type: TokenType::Invalid,
             line: 0,
             column: 0,
             lexeme: "".to_string(),

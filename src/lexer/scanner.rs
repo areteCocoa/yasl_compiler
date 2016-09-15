@@ -55,13 +55,13 @@ impl Scanner {
         Token::new()
     }
 
-    pub fn read_endless(&self) {
+    pub fn read_endless(&mut self) {
         loop {
             self.read();
         }
     }
     
-    pub fn read(&self) {
+    pub fn read(&mut self) {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
             Ok(n) => {
@@ -92,7 +92,7 @@ impl Scanner {
       *
       *
       */
-    fn handle_line(&self, line: String) -> Vec<Token> {
+    fn handle_line(&mut self, line: String) -> Vec<Token> {
         let chars = line.chars();
 
         let mut token_state = TokenState::start();
@@ -102,19 +102,42 @@ impl Scanner {
         
         for c in chars {
             token_state = token_state.next_state(c);
-
+            
             if let TokenState::Accept(action, t) = token_state {
+                if let TokenAction::Ignore = action {
+                    lexeme = String::new();
+                    token_state = TokenState::start();
+                    continue;
+                }
+                
                 match action {
                     TokenAction::Accept => {
                         lexeme.push(c);
                     },
-                    TokenAction::AcceptPushback => {
-
-                    },
+                    _ => {}
                 };
-                
+
                 let mut token_builder = TokenBuilder::new();
-                token_builder = token_builder.token_type(t.clone()).lexeme(lexeme.clone());
+                token_builder = token_builder.lexeme(lexeme.clone());
+                
+                let final_type = match t {
+                    TokenType::Identifier => {
+                        // See if lexeme is a keyword and change type to keyword if it is
+                        if lexeme == "program" || lexeme == "const" || lexeme == "begin" || lexeme == "print"
+                            || lexeme == "end" || lexeme == "div" || lexeme == "mod" {
+                                TokenType::Keyword
+                            } else {
+                                TokenType::Identifier
+                            }
+                        
+                    }
+                    _ => t,
+                };
+
+                token_builder = token_builder.token_type(final_type).column(self.column_number - (lexeme.len() as u32)).line(self.line_number);
+                
+                //let mut token_builder = TokenBuilder::new();
+                //token_builder = token_builder.token_type(t.clone()).lexeme(lexeme.clone());                
                 let token = token_builder.token();
                 tokens.push(token);
 
@@ -123,7 +146,7 @@ impl Scanner {
                 lexeme = "".to_string();
             } else if let TokenState::Unaccepted = token_state {
                 let mut token_builder = TokenBuilder::new();
-                token_builder = token_builder.token_type(TokenType::Invalid).lexeme(lexeme.clone());
+                token_builder = token_builder.token_type(TokenType::Invalid).lexeme(lexeme.clone()).column(self.column_number).line(self.line_number);
                 let token = token_builder.token();
                 tokens.push(token);
 
@@ -132,6 +155,15 @@ impl Scanner {
             } else {
                 lexeme.push(c);
             }
+
+            // Increment our position variables
+            if c == '\n' {
+                self.line_number = self.line_number + 1;
+                self.column_number = 0;
+            } else {
+                self.column_number = self.column_number + 1;
+            }
+            
         }
 
         tokens
@@ -145,22 +177,25 @@ enum TokenState {
     Start, // 0
 
     Identifier, // 1
-
+    
     Number, // 2
 
     String, // 3
     StringEnd, // 4
 
     CommentCurly, // 5
-    CommentSlash, // 6
-
+    CommentSlashStart, // 6
+    CommentSlash, // 7
+    
     Accept(TokenAction, TokenType),
     Unaccepted,
 }
 
+#[derive(Copy, Clone)]
 enum TokenAction {
     Accept,
     AcceptPushback,
+    Ignore,
 }
 
 impl TokenState {
@@ -172,7 +207,10 @@ impl TokenState {
         match self {
             // Starting state
             TokenState::Start => {
-                if input.is_alphabetic() {
+                // Check for ignored characters first
+                if input == '\n' || input == ' ' {
+                    TokenState::Start
+                } else if input.is_alphabetic() {
                     TokenState::Identifier
                 } else if let Some(input_digit) = input.to_digit(10) {
                     if input_digit == 0 {
@@ -186,7 +224,12 @@ impl TokenState {
                     TokenState::Accept(TokenAction::Accept, TokenType::Semicolon)
                 } else if input == '+' || input == '-' || input == '*' || input == '=' {
                     TokenState::Accept(TokenAction::Accept, TokenType::Invalid)
-                } else {
+                } else if input == '/' {
+                    TokenState::CommentSlashStart
+                } else if input == '{' {
+                    TokenState::CommentCurly
+                }
+                else {
                     TokenState::Unaccepted
                 }
             },
@@ -208,12 +251,43 @@ impl TokenState {
                     TokenState::Accept(TokenAction::AcceptPushback, TokenType::Number)
                 }
             }
+
+            TokenState::String => {
+                if input == '"' {
+                    TokenState::Accept(TokenAction::Accept, TokenType::String)
+                } else {
+                    TokenState::String
+                }
+            },
+            
+            TokenState::CommentCurly => {
+                if input == '}' {
+                    TokenState::Accept(TokenAction::Ignore, TokenType::Invalid)
+                } else {
+                    TokenState::CommentCurly
+                }
+            },
+
+            TokenState::CommentSlashStart => {
+                if input == '/' {
+                    TokenState::CommentSlash
+                } else {
+                    TokenState::Unaccepted
+                }
+            }
+            
+            TokenState::CommentSlash => {
+                if input == '\n' {
+                    TokenState::Accept(TokenAction::Ignore, TokenType::Invalid)
+                } else {
+                    TokenState::CommentSlash
+                }
+            }
             
             _ => {
                 TokenState::Unaccepted
             }
+
         }
     }
 }
-
-
