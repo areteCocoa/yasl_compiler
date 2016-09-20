@@ -105,21 +105,9 @@ impl TokenBuilder {
         }
     }
 
-    // // Consumes the TokenBuilder struct and returns the respective Token
-    // pub fn token(self) -> Token {
-
-
-    //     Token {
-    //         token_type: self.token_state.
-    //         line: self.line,
-    //         column: self.column,
-    //         lexeme: self.lexeme,
-    //     }
-    // }
-
     // Takes a character and pushes it to the lexeme and advances the state,
     // returns true if it reaches a final (accepting or invalid) state
-    pub fn push_char(mut self, c: char) -> (TokenBuilder, Option<Token>, bool) {
+    pub fn push_char(&mut self, c: char) -> (Option<Token>, bool) {
         // Advance the state based on the character
         self.token_state = self.token_state.next_state(c);
         let mut pushback = false;
@@ -172,7 +160,7 @@ impl TokenBuilder {
 
 
         // If we created a token we have to reset ourselves and increment values
-        (self, token, pushback)
+        (token, pushback)
     }
 
     fn final_type(&self) -> TokenType {
@@ -223,7 +211,6 @@ enum TokenState {
     Number, // 2
 
     String, // 3
-    StringEnd, // 4
 
     CommentCurly, // 5
     CommentSlashStart, // 6
@@ -241,8 +228,8 @@ enum TokenAction {
 }
 
 impl TokenState {
-    fn next_state(self, input: char) -> TokenState {
-        match self {
+    fn next_state(&self, input: char) -> TokenState {
+        match *self {
             // Starting state
             TokenState::Start => {
                 // Check for ignored characters first
