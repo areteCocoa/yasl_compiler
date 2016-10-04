@@ -1,6 +1,8 @@
 target
 Cargo.lock
 
+### YASL ###
+*.yasl
 
 # Created by https://www.gitignore.io/api/rust,emacs
 
