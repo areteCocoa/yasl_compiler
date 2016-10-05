@@ -9,31 +9,94 @@ use lexer::token::*;
 
 // Include input methods and string classes
 use std::io::{self, Read};
+use std::fs::File;
 
 // Define a Scanner struct (class)
 pub struct Scanner {
     // Public fields
     //
     //
-    // Private (implied) fields
+    // Properties
+    file: Option<File>,
+
+    // Used to construct tokens
+    // We store the token_builder, which already stores line and column number,
+    // in addition to the line and column number because the start line/column
+    // of the token does not change but the cursor position does
+    token_builder: TokenBuilder,
     line_number: u32,
     column_number: u32,
-    line: String,
-    source: String,
-    // file: File
+
+    // Storing tokens
+    tokens: Vec<Token>,
 }
 
-
 impl Scanner {
-    // Public methods
+
     pub fn new() -> Scanner {
+        // Set a dummy file
+
+        // Set the line number and column number
+        let line_number = 1;
+        let column_number = 1;
+        let token_builder = TokenBuilder::new(column_number, line_number);
+
         Scanner {
-            line_number: 0,
-            column_number: 0,
-            line: "".to_string(),
-            source: "".to_string(),
+            file: None,
+            token_builder: token_builder,
+            line_number: line_number,
+            column_number: column_number,
+            tokens: Vec::<Token>::new(),
         }
     }
+
+    // Creates a new scanner from the file_string and returns it
+    pub fn new_from_file(file_string: String) -> Scanner {
+        // Open the file so we can set it as a property
+        let file = match File::open(file_string.clone()) {
+            Ok(f) => f,
+            Err(e) => panic!("Error opening file \"{}\": {}", file_string, e),
+        };
+
+        // Set the line number and column number
+        let line_number = 0;
+        let column_number = 0;
+        let token_builder = TokenBuilder::new(column_number, line_number);
+
+        Scanner {
+            file: Some(file),
+            token_builder: token_builder,
+            line_number: line_number,
+            column_number: column_number,
+            tokens: Vec::<Token>::new(),
+        }
+    }
+
+    // Reads the file for this scanner and returns Ok(tokens) where tokens
+    // is a list of tokens or Err(error message) where error message is an
+    // string describing the error
+    // pub fn read_file(&mut self) -> Result<String, String> {
+    //     // Read the string to a file
+    //     let mut buffer = String::new();
+    //     if let Some(file) = self.file {
+    //         match file.read_to_string(&mut buffer){
+    //             Ok(size) => {
+    //                 println!("File read of size {}", size);
+    //             },
+    //             Err(e) => {
+    //                 println!("Error reading file to string: {}", e);
+    //             }
+    //         };
+    //
+    //         for c in buffer.chars() {
+    //             self.push_char(c);
+    //         }
+    //     } else {
+    //         println!("<YASLC/Lexer> Error: File not set on scanner object before read_file was called!");
+    //     }
+    //
+    //     Err("Unstable".to_string())
+    // }
 
     pub fn read_endless(&mut self) {
         loop {
@@ -44,63 +107,60 @@ impl Scanner {
     pub fn read(&mut self) {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
-            Ok(n) => {
-                //println!("{} bytes read", n);
-                //println!("{}", input);
-                let results = self.handle_line(input.clone());
-                for result in results {
-                    println!("{}", result);
-                }
-                print!("\n");
-            }
-            Err(error) => println!("error: {}", error),
-        };
+            Ok(n) => self.handle_line(input.clone()),
+            Err(e) => println!("Error reading from stdin: {}", e),
+        }
     }
 
-    fn handle_line(&mut self, line: String) -> Vec<Token> {
-        let mut tokens = Vec::<Token>::new();
-        let mut token_builder = TokenBuilder::new(self.column_number, self.line_number);
+    fn handle_line(&mut self, line: String) {
+        for c in line.chars() {
+            self.push_char(c);
+        }
+    }
 
-        let mut chars = line.chars();
-        for c in chars {
-            // Increment line and column
-            if c == '\n' {
-                self.column_number = 0;
-                self.line_number += 1;
-            } else {
-                self.column_number += 1;
-            }
+    fn push_char(&mut self, c: char) {
+        // Push the char to the builder and get the results (Option<Token>, pushback?)
+        let (token, pushback) = self.token_builder.push_char(c);
 
-            let results = token_builder.push_char(c);
-
-            token_builder = results.0;
-            let token = results.1;
-            let pushback = results.2;
-
-            match token {
-                Some(t) => {
-                    tokens.push(t);
-                    token_builder = TokenBuilder::new(self.column_number, self.line_number)
-                },
-                None => {}
-            }
-
-            if pushback {
-                let p_results = token_builder.push_char(c);
-                token_builder = p_results.0;
-                let p_token = p_results.1;
-                // ignore pushback because it will not exist since there are no 0
-                // character tokens
-
-                match p_token {
-                    Some(p_t) => {
-                        tokens.push(p_t);
-                    },
-                    None => {}
-                };
-            }
+        // Increment the column and line unless we're going to pushback
+        if pushback == false {
+            self.increment(c);
         }
 
-        tokens
+        // If we're in the start state, reset the column and line to the current column and line
+        if self.token_builder.is_start() {
+            self.token_builder.column(self.column_number);
+            self.token_builder.line(self.line_number);
+        }
+
+        // Check if we got a token and push it to the list of tokens if we do
+        if let Some(t) = token {
+            self.push_token(t);
+            self.token_builder = TokenBuilder::new(self.column_number, self.line_number);
+        }
+
+        // If we need to push the cursor back, we just re-read the current character
+        if pushback == true {
+            self.push_char(c);
+        }
+    }
+
+    // Increments the line and column states based on the input
+    fn increment(&mut self, c: char) {
+        if c == '\n' {
+            self.column_number = 1;
+            self.line_number += 1;
+        } else {
+            self.column_number += 1;
+        }
+    }
+
+    // Pushes the token onto the list and prints it
+    fn push_token(&mut self, t: Token) {
+        // Comment this line to stop printing tokens when they are generated
+        println!("<YASLC/lexer> Generated token: {}", t);
+
+        // Push the token to the vector
+        self.tokens.push(t);
     }
 }
