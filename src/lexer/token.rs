@@ -105,6 +105,13 @@ impl TokenBuilder {
         }
     }
 
+    pub fn is_start(&self) -> bool {
+        match self.token_state {
+            TokenState::Start => true,
+            _ => false,
+        }
+    }
+
     // Takes a character and pushes it to the lexeme and advances the state,
     // returns true if it reaches a final (accepting or invalid) state
     pub fn push_char(&mut self, c: char) -> (Option<Token>, bool) {
@@ -114,6 +121,7 @@ impl TokenBuilder {
 
         match self.token_state {
             TokenState::Start => self.lexeme = String::new(),
+
             _ => {self.lexeme.push(c)}
         }
 
@@ -151,10 +159,19 @@ impl TokenBuilder {
                 result
             },
 
-            // Not an accepting case, we have to push the
-            _ => {
-                (None)
+            TokenState::Unaccepted => {
+                let lexeme = self.lexeme.clone();
+
+                Some(Token {
+                    token_type: TokenType::Invalid,
+                    line: self.line,
+                    column: self.column,
+                    lexeme: lexeme,
+                })
             }
+
+            // Not an accepting case, we have to push the
+            _ => None,
         };
 
 
@@ -184,19 +201,16 @@ impl TokenBuilder {
     }
 
     // Consumption setter functions
-    pub fn line(mut self, line: u32) -> TokenBuilder {
+    pub fn line(&mut self, line: u32) {
         self.line = line;
-        self
     }
 
-    pub fn column(mut self, column: u32) -> TokenBuilder {
+    pub fn column(&mut self, column: u32) {
         self.column = column;
-        self
     }
 
-    pub fn lexeme(mut self, lexeme: String) -> TokenBuilder {
+    pub fn lexeme(&mut self, lexeme: String) {
         self.lexeme = lexeme;
-        self
     }
 }
 
@@ -293,7 +307,7 @@ impl TokenState {
 
             TokenState::CommentCurly => {
                 if input == '}' {
-                    TokenState::Accept(TokenAction::Ignore, TokenType::Invalid)
+                    TokenState::Start
                 } else {
                     TokenState::CommentCurly
                 }
@@ -309,7 +323,7 @@ impl TokenState {
 
             TokenState::CommentSlash => {
                 if input == '\n' {
-                    TokenState::Accept(TokenAction::Ignore, TokenType::Invalid)
+                    TokenState::Start
                 } else {
                     TokenState::CommentSlash
                 }
