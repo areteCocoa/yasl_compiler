@@ -14,7 +14,20 @@ fn main() {
 
     // Create a new lexer (Scanner)
     let mut scanner = yasl_compiler::lexer::scanner::Scanner::new();
-    scanner.read_endless();
+
+    // Create a new parser
+    let mut parser = yasl_compiler::parser::Parser::new();
+
+    loop {
+        scanner.read();
+
+        let new_tokens = scanner.new_tokens.clone();
+        // for t in new_tokens.iter() {
+        //     println!("{}", t);
+        // }
+
+        parser.parse_line(new_tokens);
+    }
 
     // Get the last argument, the file name
     // let mut arguments = std::env::args();

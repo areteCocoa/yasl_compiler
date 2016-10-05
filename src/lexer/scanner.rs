@@ -28,7 +28,10 @@ pub struct Scanner {
     column_number: u32,
 
     // Storing tokens
-    tokens: Vec<Token>,
+    pub tokens: Vec<Token>,
+
+    // The set of tokens from the last input
+    pub new_tokens: Vec<Token>,
 }
 
 impl Scanner {
@@ -47,6 +50,7 @@ impl Scanner {
             line_number: line_number,
             column_number: column_number,
             tokens: Vec::<Token>::new(),
+            new_tokens: Vec::<Token>::new(),
         }
     }
 
@@ -69,6 +73,7 @@ impl Scanner {
             line_number: line_number,
             column_number: column_number,
             tokens: Vec::<Token>::new(),
+            new_tokens: Vec::<Token>::new(),
         }
     }
 
@@ -98,12 +103,6 @@ impl Scanner {
     //     Err("Unstable".to_string())
     // }
 
-    pub fn read_endless(&mut self) {
-        loop {
-            self.read();
-        }
-    }
-
     pub fn read(&mut self) {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
@@ -113,6 +112,7 @@ impl Scanner {
     }
 
     fn handle_line(&mut self, line: String) {
+        self.new_tokens = Vec::<Token>::new();
         for c in line.chars() {
             self.push_char(c);
         }
@@ -158,9 +158,14 @@ impl Scanner {
     // Pushes the token onto the list and prints it
     fn push_token(&mut self, t: Token) {
         // Comment this line to stop printing tokens when they are generated
-        println!("<YASLC/lexer> Generated token: {}", t);
+        let debug = false;
+        if debug == true {
+            println!("<YASLC/lexer> Generated token: {}", t);
+        }
+
 
         // Push the token to the vector
+        self.new_tokens.push(t.clone());
         self.tokens.push(t);
     }
 }

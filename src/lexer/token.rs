@@ -54,7 +54,7 @@ impl fmt::Display for TokenType {
             TokenType::String => {
                 write!(f, "STRING")
             },
-            
+
             TokenType::Semicolon => write!(f, "SEMI"),
             TokenType::Period => write!(f, "PERIOD"),
             TokenType::LeftParen => write!(f, "LPAREN"),
@@ -70,8 +70,9 @@ impl fmt::Display for TokenType {
     }
 }
 
+#[derive(Clone)]
 pub struct Token {
-    pub token_type: TokenType,
+    token_type: TokenType,
     line: u32,
     column: u32,
     lexeme: String
@@ -86,6 +87,22 @@ impl Token {
             lexeme: "".to_string(),
             token_type: TokenType::EOFile,
         }
+    }
+
+    pub fn token_type(&self) -> TokenType {
+        self.token_type
+    }
+
+    pub fn lexeme(&self) -> String {
+        self.lexeme.clone()
+    }
+
+    pub fn line(&self) -> u32 {
+        self.line
+    }
+
+    pub fn column(&self) -> u32 {
+        self.column
     }
 }
 
