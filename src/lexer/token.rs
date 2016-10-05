@@ -26,6 +26,11 @@ pub enum TokenType {
 
     // Punctuation
     Semicolon,
+    Period,
+    LeftParen,
+    RightParen,
+
+    // Operators
     Plus,
     Minus,
     Star,
@@ -49,7 +54,12 @@ impl fmt::Display for TokenType {
             TokenType::String => {
                 write!(f, "STRING")
             },
+            
             TokenType::Semicolon => write!(f, "SEMI"),
+            TokenType::Period => write!(f, "PERIOD"),
+            TokenType::LeftParen => write!(f, "LPAREN"),
+            TokenType::RightParen => write!(f, "RPAREN"),
+
             TokenType::Plus => write!(f, "PLUS"),
             TokenType::Minus => write!(f, "MINUS"),
             TokenType::Star => write!(f, "STAR"),
