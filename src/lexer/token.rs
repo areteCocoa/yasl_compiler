@@ -10,13 +10,13 @@
 
 use std::fmt;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum TokenType {
     // Identifier
     Identifier,
 
     // Keyword
-    Keyword,
+    Keyword(KeywordType),
 
     // Numbers
     Number,
@@ -47,8 +47,8 @@ impl fmt::Display for TokenType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             TokenType::Identifier => write!(f, "ID"),
-            TokenType::Keyword => {
-                write!(f, "KEYWORD")
+            TokenType::Keyword(k) => {
+                write!(f, "KEYWORD {}", k)
             },
             TokenType::Number => write!(f, "NUM"),
             TokenType::String => {
@@ -66,6 +66,62 @@ impl fmt::Display for TokenType {
             TokenType::Equals => write!(f, "EQUALS"),
             TokenType::EOFile => write!(f, "EOF"),
             TokenType::Invalid => write!(f, "Invalid"),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum KeywordType {
+    Program,
+    Const,
+    Begin,
+    Print,
+    End,
+    Div,
+    Mod,
+    Var,
+    Int,
+    Bool,
+    Proc,
+    If,
+    Then,
+    Else,
+    While,
+    Do,
+    Prompt,
+    And,
+    Or,
+    Not,
+    True,
+    False,
+}
+
+impl fmt::Display for KeywordType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::KeywordType::*;
+        match *self {
+            Program => write!(f, "program"),
+            Const => write!(f, "const"),
+            Begin => write!(f, "begin"),
+            Print => write!(f, "print"),
+            End => write!(f, "end"),
+            Div => write!(f, "div"),
+            Mod => write!(f, "mod"),
+            Var => write!(f, "var"),
+            Int => write!(f, "int"),
+            Bool => write!(f, "bool"),
+            Proc => write!(f, "proc"),
+            If => write!(f, "if"),
+            Then => write!(f, "then"),
+            Else => write!(f, "else"),
+            While => write!(f, "while"),
+            Do => write!(f, "do"),
+            Prompt => write!(f, "prompt"),
+            And => write!(f, "and"),
+            Or => write!(f, "or"),
+            Not => write!(f, "not"),
+            True => write!(f, "true"),
+            False => write!(f, "false"),
         }
     }
 }
@@ -213,17 +269,53 @@ impl TokenBuilder {
                 match t {
                     TokenType::Identifier => {
                         let l = self.lexeme.to_lowercase();
-                        if l == "program" || l == "const" || l == "begin" || l == "print"
-                            || l == "end" || l == "div" || l == "mod" {
-                            TokenType::Keyword
-                        } else {
-                            TokenType::Identifier
+                        match self.keyword_for_token(&l) {
+                            Some(s) => TokenType::Keyword(s),
+                            None => TokenType::Identifier,
                         }
+
+
+
+                        // if l == "program" || l == "const" || l == "begin" || l == "print"
+                        //     || l == "end" || l == "div" || l == "mod" {
+                        //     TokenType::Keyword
+                        // } else {
+                        //     TokenType::Identifier
+                        // }
                     },
                     _ => t
                 }
             },
             _ => TokenType::Invalid
+        }
+    }
+
+    fn keyword_for_token(&self, lexeme: &str) -> Option<KeywordType> {
+        use self::KeywordType::*;
+        match lexeme {
+            "program" => Some(Program),
+            "const" => Some(Const),
+            "begin" => Some(Begin),
+            "print" => Some(Print),
+            "end" => Some(End),
+            "div" => Some(Div),
+            "mod" => Some(Mod),
+            "var" => Some(Var),
+            "int" => Some(Int),
+            "bool" => Some(Bool),
+            "proc" => Some(Proc),
+            "if" => Some(If),
+            "then" => Some(Then),
+            "else" => Some(Else),
+            "while" => Some(While),
+            "do" => Some(Do),
+            "prompt" => Some(Prompt),
+            "and" => Some(And),
+            "or" => Some(Or),
+            "not" => Some(Not),
+            "true" => Some(True),
+            "false" => Some(False),
+            _ => None,
         }
     }
 
