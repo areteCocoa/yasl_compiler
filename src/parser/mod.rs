@@ -182,11 +182,17 @@ impl Parser {
                 // Check the statements state
                 match token.token_type() {
                     TokenType::Semicolon => {
-                        let e_stack = ExpressionStack::new_from_tokens(self.pop_stack());
+                        let mut stack = self.pop_stack();
+                        stack.pop(); // take away the ;
+                        let e_stack = ExpressionStack::new_from_tokens(stack);
                         e_stack.print_stack();
                     },
                     _ => {}, // We're still in the middle of an expression
                 }
+            },
+            BodyState::Begin => {
+                self.stack.clear();
+                self.state = ParserState::Body(new_state);
             }
             _ => {
                 self.state = ParserState::Body(new_state);
@@ -342,7 +348,9 @@ impl Expression {
 
             TokenType::Keyword(KeywordType::Print) => Some(Expression::Operator(t.token_type())),
 
-            _ => None,
+            _ => {
+                None
+            },
         }
     }
 }
@@ -355,7 +363,7 @@ impl PartialOrd for Expression {
             &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => {
                 // + or -
                 match other {
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Greater),
+                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Less),
 
                     &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
                     | &Operator(TokenType::Keyword(KeywordType::Mod))
@@ -369,9 +377,10 @@ impl PartialOrd for Expression {
             | &Operator(TokenType::Keyword(KeywordType::Mod)) => {
                 // * or div or mod
                 match other {
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) |
+                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Greater),
+
                     &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))|
-                    &Operator(TokenType::Keyword(KeywordType::Mod)) => Some(Ordering::Greater),
+                    &Operator(TokenType::Keyword(KeywordType::Mod)) => Some(Ordering::Less),
 
                     &Operand(_) => Some(Ordering::Less),
 
@@ -396,6 +405,23 @@ impl PartialOrd for Expression {
         }
     }
 }
+
+// impl PartialEq for Expression {
+//     fn eq(&self, other: &Expression) -> bool {
+//         match self {
+//             &Operator(o) => {
+//                 match other {
+//
+//                 }
+//             },
+//             &Operand(o) => {
+//                 match other {
+//
+//                 }
+//             }
+//         }
+//     }
+// }
 
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -422,18 +448,49 @@ impl ExpressionStack {
     }
 
     fn new_from_tokens(tokens: Vec<Token>) -> ExpressionStack {
-        let mut stack = Vec::<Expression>::new();
+        let mut e_stack = ExpressionStack::new();
 
         for t in tokens.into_iter() {
             if let Some(exp) = Expression::from_token(t) {
-                stack.push(exp);
+                e_stack.push_expression(exp);
             } else {
 
             }
         }
 
-        ExpressionStack {
-            expressions: stack
+        while let Some(e) = e_stack.expressions.pop() {
+            println!("{}", e);
+        }
+
+        e_stack
+    }
+
+    fn push_expression(&mut self, e: Expression) {
+        match e {
+            Expression::Operand(l) => println!("{}", l),
+            Expression::Operator(_) => {
+                // if the stack is empty, just push it
+                if self.expressions.len() <= 0 {
+                    self.expressions.push(e);
+                } // if the item is an operator (this will need to be changed with the addition of parenthesis)
+                else {
+                    // if the item on the top of the stack is lower priority
+                    if e >= self.expressions[self.expressions.len() - 1] {
+                        self.expressions.push(e);
+                    } else {
+                        // Pop items off the stack, write to output, until we get to one with lower
+                        // priority (or the stack empties), then push item to stack
+                        while e <= self.expressions[self.expressions.len() - 1] {
+                            if let Some(x) = self.expressions.pop() {
+                                println!("{}", x);
+                            } else {
+                                break;
+                            }
+                        }
+                        self.expressions.push(e);
+                    }
+                } // else if parenthesis
+            }
         }
     }
 
