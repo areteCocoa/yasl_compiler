@@ -2,6 +2,9 @@
 use super::lexer::token::{Token, TokenType, KeywordType};
 
 use std::collections::HashMap;
+use std::cmp::Ordering;
+
+use std::fmt;
 
 pub struct Parser {
     tokens: Vec<Token>,
@@ -45,7 +48,16 @@ impl Parser {
 
         match self.state.clone() {
             ParserState::Start(s) => self.parse_start(token, s),
-            ParserState::Constants(s) => self.parse_assignment(token, s),
+            ParserState::Constants(s) => {
+                match token.token_type() {
+                    TokenType::Keyword(KeywordType::Begin) => {
+                        // we've ended the constants and are moving to the executed section
+                        self.state = ParserState::Body(BodyState::Start);
+                        self.parse_body(token, BodyState::Start);
+                    }
+                    _ => self.parse_assignment(token, s)
+                }
+            },
             ParserState::Body(s) => self.parse_body(token, s),
         }
 
@@ -94,9 +106,6 @@ impl Parser {
 
         // Check to see where we are now.
         match new_state {
-            AssignmentState::None => {
-                // We're not in the middle of an assignment
-            },
             AssignmentState::Semicolon => {
                 // Finished the assignment, get the values and store them
                 let mut column = 0;
@@ -130,7 +139,7 @@ impl Parser {
                 // Reset the assignment state
                 self.state = ParserState::Constants(AssignmentState::None);
 
-                self.print_constants();
+                //self.print_constants();
             }
 
             AssignmentState::Invalid(ref err_string) => {
@@ -146,12 +155,59 @@ impl Parser {
     }
 
     fn parse_body(&mut self, token: Token, state: BodyState) {
+        // Advance to the next state
+        let new_state = state.next(token.token_type());
+
+        // enum BodyState {
+        //     // We've entered the body state
+        //     Start,
+        //
+        //     // Refering to the keyword begin
+        //     Begin,
+        //     Statements,
+        //     End,
+        //
+        //     Invalid(String)
+        // }
+        match new_state {
+            BodyState::End => {
+                // End
+                // We don't need to do anything YET
+                // TODO: do something
+            },
+            BodyState::Invalid(s) => {
+                println!("<YASLC/Parser> Unexpected error with parser: {}", s);
+            },
+            BodyState::Statements => {
+                // Check the statements state
+                match token.token_type() {
+                    TokenType::Semicolon => {
+                        let e_stack = ExpressionStack::new_from_tokens(self.pop_stack());
+                        e_stack.print_stack();
+                    },
+                    _ => {}, // We're still in the middle of an expression
+                }
+            }
+            _ => {
+                self.state = ParserState::Body(new_state);
+            },
+        }
+
 
     }
 
     fn push_token(&mut self, token: Token) {
         self.tokens.push(token.clone());
-        self.stack.push(token);
+
+        // Push to the stack but check if its a constant
+        if let Some(value) = self.constants.get(&token.lexeme()) {
+            let mut value_token = token.clone();
+            value_token.set_lexeme(value.clone());
+            value_token.set_token_type(TokenType::Number);
+            self.stack.push(value_token);
+        } else {
+            self.stack.push(token);
+        }
     }
 
     pub fn print_constants(&self) {
@@ -159,8 +215,17 @@ impl Parser {
             println!("{}:{}", lexeme, value);
         }
     }
+
+    fn pop_stack(&mut self) -> Vec<Token> {
+        let stack = self.stack.clone();
+
+        self.stack.clear();
+
+        return stack;
+    }
 }
 
+// ParserState is the state of the parser relative to the input it has received
 #[derive(Clone)]
 enum ParserState {
     Start(StartState),
@@ -168,6 +233,7 @@ enum ParserState {
     Body(BodyState),
 }
 
+// StartState is the state of the parser in the start of the parsed input
 #[derive(Clone)]
 enum StartState {
     Start,
@@ -192,6 +258,7 @@ impl StartState {
     }
 }
 
+// AssignmentState is the state of the parser in the header const/var assignments
 #[derive(Clone)]
 enum AssignmentState {
     None,
@@ -220,19 +287,159 @@ impl AssignmentState {
     }
 }
 
+// BodyState is the state of the parser in the Body of the input
 #[derive(Clone)]
 enum BodyState {
+    // We've entered the body state
+    Start,
+
+    // Refering to the keyword "begin"
     Begin,
     Statements,
     End,
+
+    Invalid(String)
 }
 
-// enum ParserState {
-//     Constant(Option<Token>),
-// }
-//
-// impl ParserState {
-//     fn validate_next(self) -> Result<ParserState> {
-//
-//     }
-// }
+impl BodyState {
+    fn next(&self, token_type: TokenType) -> BodyState {
+        match (self.clone(), token_type) {
+            (BodyState::Start, TokenType::Keyword(KeywordType::Begin)) => {
+                BodyState::Begin
+            },
+            (BodyState::Begin, _) => {
+                BodyState::Statements
+            },
+            (BodyState::Statements, TokenType::Keyword(KeywordType::End)) => BodyState::End,
+            (BodyState::Statements, _) => BodyState::Statements,
+            _ => {
+                // TODO: Figure out what got us here
+
+                BodyState::Invalid("Unexpected token.".to_string())
+            }
+        }
+    }
+}
+
+#[derive(PartialEq)]
+enum Expression {
+    // +, -, etc
+    // TokenType is wrapped to store what kind of operator this is
+    Operator(TokenType),
+
+    // 2, 5, 7.5, etc
+    // The string is stored to have the value of the operand
+    Operand(String)
+}
+
+impl Expression {
+    fn from_token(t: Token) -> Option<Expression> {
+        match t.token_type() {
+            TokenType::Number => Some(Expression::Operand(t.lexeme())),
+
+            TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Keyword(KeywordType::Div)
+            | TokenType::Keyword(KeywordType::Mod) => Some(Expression::Operator(t.token_type())),
+
+            TokenType::Keyword(KeywordType::Print) => Some(Expression::Operator(t.token_type())),
+
+            _ => None,
+        }
+    }
+}
+
+impl PartialOrd for Expression {
+    fn partial_cmp(&self, other: &Expression) -> Option<Ordering> {
+        use self::Expression::*;
+
+        match self {
+            &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => {
+                // + or -
+                match other {
+                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Greater),
+
+                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
+                    | &Operator(TokenType::Keyword(KeywordType::Mod))
+                    | &Operand(_) => Some(Ordering::Less),
+
+                    _ => None,
+                }
+            },
+
+            &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
+            | &Operator(TokenType::Keyword(KeywordType::Mod)) => {
+                // * or div or mod
+                match other {
+                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) |
+                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))|
+                    &Operator(TokenType::Keyword(KeywordType::Mod)) => Some(Ordering::Greater),
+
+                    &Operand(_) => Some(Ordering::Less),
+
+                    _ => None,
+                }
+            },
+
+            &Operand(_) => {
+                // Any number
+                match other {
+                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) |
+                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))|
+                    &Operator(TokenType::Keyword(KeywordType::Mod)) => Some(Ordering::Greater),
+
+                    &Operand(_) => None,
+
+                    _ => None,
+                }
+            }
+
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &Expression::Operator(ref t) => {
+                write!(f, "{}", t)
+            },
+            &Expression::Operand(ref v) => {
+                write!(f, "{}", v)
+            }
+        }
+    }
+}
+
+struct ExpressionStack {
+    expressions: Vec<Expression>,
+}
+
+impl ExpressionStack {
+    fn new() -> ExpressionStack {
+        ExpressionStack {
+            expressions: Vec::<Expression>::new(),
+        }
+    }
+
+    fn new_from_tokens(tokens: Vec<Token>) -> ExpressionStack {
+        let mut stack = Vec::<Expression>::new();
+
+        for t in tokens.into_iter() {
+            if let Some(exp) = Expression::from_token(t) {
+                stack.push(exp);
+            } else {
+
+            }
+        }
+
+        ExpressionStack {
+            expressions: stack
+        }
+    }
+
+    fn print_stack(&self) {
+        for e in self.expressions.iter() {
+            println!("{}", e);
+        }
+    }
+}

@@ -10,7 +10,7 @@
 
 use std::fmt;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum TokenType {
     // Identifier
     Identifier,
@@ -48,7 +48,7 @@ impl fmt::Display for TokenType {
         match self {
             &TokenType::Identifier => write!(f, "ID"),
             &TokenType::Keyword(ref k) => {
-                write!(f, "KEYWORD {}", k)
+                write!(f, "{}", k)
             },
             &TokenType::Number => write!(f, "NUM"),
             &TokenType::String => {
@@ -70,7 +70,7 @@ impl fmt::Display for TokenType {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum KeywordType {
     Program,
     Const,
@@ -100,28 +100,28 @@ impl fmt::Display for KeywordType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::KeywordType::*;
         match *self {
-            Program => write!(f, "program"),
-            Const => write!(f, "const"),
-            Begin => write!(f, "begin"),
-            Print => write!(f, "print"),
-            End => write!(f, "end"),
-            Div => write!(f, "div"),
-            Mod => write!(f, "mod"),
-            Var => write!(f, "var"),
-            Int => write!(f, "int"),
-            Bool => write!(f, "bool"),
-            Proc => write!(f, "proc"),
-            If => write!(f, "if"),
-            Then => write!(f, "then"),
-            Else => write!(f, "else"),
-            While => write!(f, "while"),
-            Do => write!(f, "do"),
-            Prompt => write!(f, "prompt"),
-            And => write!(f, "and"),
-            Or => write!(f, "or"),
-            Not => write!(f, "not"),
-            True => write!(f, "true"),
-            False => write!(f, "false"),
+            Program => write!(f, "PROGRAM"),
+            Const => write!(f, "CONST"),
+            Begin => write!(f, "BEGIN"),
+            Print => write!(f, "PRINT"),
+            End => write!(f, "END"),
+            Div => write!(f, "DIV"),
+            Mod => write!(f, "MOD"),
+            Var => write!(f, "VAR"),
+            Int => write!(f, "INT"),
+            Bool => write!(f, "BOOL"),
+            Proc => write!(f, "PROC"),
+            If => write!(f, "IF"),
+            Then => write!(f, "THEN"),
+            Else => write!(f, "ELSE"),
+            While => write!(f, "WHILE"),
+            Do => write!(f, "DO"),
+            Prompt => write!(f, "PROMPT"),
+            And => write!(f, "AND"),
+            Or => write!(f, "OR"),
+            Not => write!(f, "NOT"),
+            True => write!(f, "TRUE"),
+            False => write!(f, "FALSE"),
         }
     }
 }
@@ -149,16 +149,32 @@ impl Token {
         self.token_type.clone()
     }
 
+    pub fn set_token_type(&mut self, t: TokenType) {
+        self.token_type = t;
+    }
+
     pub fn lexeme(&self) -> String {
         self.lexeme.clone()
+    }
+
+    pub fn set_lexeme(&mut self, l: String) {
+        self.lexeme = l;
     }
 
     pub fn line(&self) -> u32 {
         self.line
     }
 
+    pub fn set_line(&mut self, line: u32) {
+        self.line = line;
+    }
+
     pub fn column(&self) -> u32 {
         self.column
+    }
+
+    pub fn set_column(&mut self, column: u32) {
+        self.column = column;
     }
 }
 
