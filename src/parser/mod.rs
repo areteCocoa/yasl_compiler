@@ -1,5 +1,5 @@
 
-use super::lexer::token::{Token, TokenType};
+use super::lexer::token::{Token, TokenType, KeywordType};
 
 use std::collections::HashMap;
 
@@ -107,7 +107,7 @@ impl Parser {
                 // Pop the stack and find the value and lexeme
                 while let Some(t) = self.stack.pop() {
                     match t.token_type() {
-                        TokenType::Keyword => {
+                        TokenType::Keyword(_) => {
                             column = t.column();
                             line = t.line();
                         }
@@ -180,7 +180,7 @@ enum StartState {
 impl StartState {
     fn next(&self, token_type: TokenType) -> StartState {
         match (self.clone(), token_type) {
-            (StartState::Start, TokenType::Keyword) => StartState::Program,
+            (StartState::Start, TokenType::Keyword(KeywordType::Program)) => StartState::Program,
             (StartState::Program, TokenType::Identifier) => StartState::ProgramName,
             (StartState::ProgramName, TokenType::Semicolon) => StartState::Semicolon,
             _ => {
@@ -206,7 +206,7 @@ enum AssignmentState {
 impl AssignmentState {
     fn next(&self, token_type: TokenType) -> AssignmentState {
         match (self.clone(), token_type) {
-            (AssignmentState::None, TokenType::Keyword) => AssignmentState::Keyword,
+            (AssignmentState::None, TokenType::Keyword(KeywordType::Const)) => AssignmentState::Keyword,
             (AssignmentState::Keyword, TokenType::Identifier) => AssignmentState::Identifier,
             (AssignmentState::Identifier, TokenType::Equals) => AssignmentState::Equals,
             (AssignmentState::Equals, TokenType::Number) => AssignmentState::Value,

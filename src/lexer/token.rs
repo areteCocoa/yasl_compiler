@@ -45,27 +45,27 @@ pub enum TokenType {
 
 impl fmt::Display for TokenType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            TokenType::Identifier => write!(f, "ID"),
-            TokenType::Keyword(k) => {
+        match self {
+            &TokenType::Identifier => write!(f, "ID"),
+            &TokenType::Keyword(ref k) => {
                 write!(f, "KEYWORD {}", k)
             },
-            TokenType::Number => write!(f, "NUM"),
-            TokenType::String => {
+            &TokenType::Number => write!(f, "NUM"),
+            &TokenType::String => {
                 write!(f, "STRING")
             },
 
-            TokenType::Semicolon => write!(f, "SEMI"),
-            TokenType::Period => write!(f, "PERIOD"),
-            TokenType::LeftParen => write!(f, "LPAREN"),
-            TokenType::RightParen => write!(f, "RPAREN"),
+            &TokenType::Semicolon => write!(f, "SEMI"),
+            &TokenType::Period => write!(f, "PERIOD"),
+            &TokenType::LeftParen => write!(f, "LPAREN"),
+            &TokenType::RightParen => write!(f, "RPAREN"),
 
-            TokenType::Plus => write!(f, "PLUS"),
-            TokenType::Minus => write!(f, "MINUS"),
-            TokenType::Star => write!(f, "STAR"),
-            TokenType::Equals => write!(f, "EQUALS"),
-            TokenType::EOFile => write!(f, "EOF"),
-            TokenType::Invalid => write!(f, "Invalid"),
+            &TokenType::Plus => write!(f, "PLUS"),
+            &TokenType::Minus => write!(f, "MINUS"),
+            &TokenType::Star => write!(f, "STAR"),
+            &TokenType::Equals => write!(f, "EQUALS"),
+            &TokenType::EOFile => write!(f, "EOF"),
+            &TokenType::Invalid => write!(f, "Invalid"),
         }
     }
 }
@@ -146,7 +146,7 @@ impl Token {
     }
 
     pub fn token_type(&self) -> TokenType {
-        self.token_type
+        self.token_type.clone()
     }
 
     pub fn lexeme(&self) -> String {
@@ -264,7 +264,7 @@ impl TokenBuilder {
     }
 
     fn final_type(&self) -> TokenType {
-        match self.token_state {
+        match self.token_state.clone() {
             TokenState::Accept(_, t) => {
                 match t {
                     TokenType::Identifier => {
@@ -273,15 +273,6 @@ impl TokenBuilder {
                             Some(s) => TokenType::Keyword(s),
                             None => TokenType::Identifier,
                         }
-
-
-
-                        // if l == "program" || l == "const" || l == "begin" || l == "print"
-                        //     || l == "end" || l == "div" || l == "mod" {
-                        //     TokenType::Keyword
-                        // } else {
-                        //     TokenType::Identifier
-                        // }
                     },
                     _ => t
                 }
@@ -336,6 +327,7 @@ impl TokenBuilder {
 /*
  * DFA code
  */
+ #[derive(Clone)]
 enum TokenState {
     Start, // 0
 
