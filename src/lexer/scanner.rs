@@ -17,7 +17,7 @@ pub struct Scanner {
     //
     //
     // Properties
-    file: Option<File>,
+    file: File,
 
     // Used to construct tokens
     // We store the token_builder, which already stores line and column number,
@@ -36,23 +36,23 @@ pub struct Scanner {
 
 impl Scanner {
 
-    pub fn new() -> Scanner {
-        // Set a dummy file
-
-        // Set the line number and column number
-        let line_number = 1;
-        let column_number = 1;
-        let token_builder = TokenBuilder::new(column_number, line_number);
-
-        Scanner {
-            file: None,
-            token_builder: token_builder,
-            line_number: line_number,
-            column_number: column_number,
-            tokens: Vec::<Token>::new(),
-            new_tokens: Vec::<Token>::new(),
-        }
-    }
+    // pub fn new() -> Scanner {
+    //     // Set a dummy file
+    //
+    //     // Set the line number and column number
+    //     let line_number = 1;
+    //     let column_number = 1;
+    //     let token_builder = TokenBuilder::new(column_number, line_number);
+    //
+    //     Scanner {
+    //         file: None,
+    //         token_builder: token_builder,
+    //         line_number: line_number,
+    //         column_number: column_number,
+    //         tokens: Vec::<Token>::new(),
+    //         new_tokens: Vec::<Token>::new(),
+    //     }
+    // }
 
     // Creates a new scanner from the file_string and returns it
     pub fn new_from_file(file_string: String) -> Scanner {
@@ -68,7 +68,7 @@ impl Scanner {
         let token_builder = TokenBuilder::new(column_number, line_number);
 
         Scanner {
-            file: Some(file),
+            file: file,
             token_builder: token_builder,
             line_number: line_number,
             column_number: column_number,
@@ -79,30 +79,31 @@ impl Scanner {
 
     // Reads the file for this scanner and returns Ok(tokens) where tokens
     // is a list of tokens or Err(error message) where error message is an
-    // string describing the error
-    // pub fn read_file(&mut self) -> Result<String, String> {
-    //     // Read the string to a file
-    //     let mut buffer = String::new();
-    //     if let Some(file) = self.file {
-    //         match file.read_to_string(&mut buffer){
-    //             Ok(size) => {
-    //                 println!("File read of size {}", size);
-    //             },
-    //             Err(e) => {
-    //                 println!("Error reading file to string: {}", e);
-    //             }
-    //         };
-    //
-    //         for c in buffer.chars() {
-    //             self.push_char(c);
-    //         }
-    //     } else {
-    //         println!("<YASLC/Lexer> Error: File not set on scanner object before read_file was called!");
-    //     }
-    //
-    //     Err("Unstable".to_string())
-    // }
+    // string describing the error. Consumes the scanner.
+    pub fn read_file(mut self) -> Result<Vec<Token>, String> {
+        // Read the string to a file
+        let mut buffer = String::new();
 
+        // Read the file to the buffer
+        match self.file.read_to_string(&mut buffer){
+            Ok(size) => {
+                println!("File read of size {}", size);
+            },
+            Err(e) => {
+                // println!(, e);
+                return Err(format!("Error reading file to string: {}", e));
+            }
+        };
+
+        // Input the file one character at a time
+        for c in buffer.chars() {
+            self.push_char(c);
+        }
+
+        Ok(self.tokens)
+    }
+
+    // Reads a single line from stdin
     pub fn read(&mut self) {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
