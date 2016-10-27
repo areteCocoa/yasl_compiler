@@ -65,10 +65,10 @@ impl Parser {
 
     fn print_error(&self, expected: Option<TokenType>, found: &Token) {
         if let Some(e) = expected {
-            println!("<YASLC/Parser> ({}, {}) Error: Expected token {}, found {}.",
+            panic!("<YASLC/Parser> ({}, {}) Error: Expected token {}, found {}.",
                 found.line(), found.column(), e, found);
         } else {
-            println!("<YASLC/Parser> ({}, {}) Error: Unexpected token.",
+            panic!("<YASLC/Parser> ({}, {}) Error: Unexpected token.",
                 found.line(), found.column());
         }
 
@@ -288,10 +288,16 @@ impl Parser {
         };
 
         match self.statement_tail() {
-            ParseResult::Unexpected(t) => ParseResult::Unexpected(t),
             ParseResult::Incorrect(t) => {
-                self.tokens.insert(0, t);
-                ParseResult::Success
+                if t.is_type(TokenType::Keyword(KeywordType::End)) {
+                    self.tokens.insert(0, t);
+                    return ParseResult::Success;
+                }
+                self.print_error(None, &t);
+                ParseResult::Unexpected(t)
+            },
+            ParseResult::Unexpected(t) => {
+                return ParseResult::Unexpected(t);
             }
             ParseResult::Success => ParseResult::Success,
         }
@@ -301,18 +307,18 @@ impl Parser {
         // Check the first one manually
         match self.check_next(TokenType::Semicolon, false) {
             ParseResult::Unexpected(t) => {
-
                 return ParseResult::Unexpected(t);
             }
             ParseResult::Incorrect(t) => {
-
                 return ParseResult::Incorrect(t);
             }
             _ => {},
         };
 
         match self.statement() {
-            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
+            ParseResult::Unexpected(t) => {
+                return ParseResult::Unexpected(t);
+            }
             _ => {},
         };
 
