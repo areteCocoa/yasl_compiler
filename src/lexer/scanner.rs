@@ -87,7 +87,7 @@ impl Scanner {
         // Read the file to the buffer
         match self.file.read_to_string(&mut buffer){
             Ok(size) => {
-                println!("File read of size {}", size);
+                // println!("File read of size {}", size);
             },
             Err(e) => {
                 // println!(, e);

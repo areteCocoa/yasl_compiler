@@ -1,3 +1,8 @@
+///
+/// The parser module is responsible for syntax parsing of a set of compiler tokens
+/// using an LL(1) parser.
+///
+
 
 use super::lexer::token::{Token, TokenType, KeywordType};
 
@@ -6,325 +11,516 @@ use std::cmp::Ordering;
 
 use std::fmt;
 
+/// The Parser struct can check syntax for a set of tokens for validity.
 pub struct Parser {
     tokens: Vec<Token>,
 
     constants: HashMap<String, String>,
 
     stack: Vec<Token>,
-
-    state: ParserState,
 }
 
+/*
+ *  The parser is implemented with some convenience functions for many rules. However,
+ *  some rules still have to checked "manually." For any rule that can be accessed from a
+ *  rule that can go to empty, you must check the first token to make sure you're in the
+ *  correct rule.
+ */
 impl Parser {
-    pub fn new() -> Parser {
-        Parser {
-            tokens: Vec::<Token>::new(),
-            constants: HashMap::<String, String>::new(),
-            stack: Vec::<Token>::new(),
-
-            state: ParserState::Start(StartState::Start),
-        }
-    }
-
-    // pub fn parse_file(&mut self, tokens: Vec<Token>) {
+    // pub fn new() -> Parser {
+    //     Parser {
+    //         tokens: Vec::<Token>::new(),
+    //         constants: HashMap::<String, String>::new(),
+    //         stack: Vec::<Token>::new(),
     //
+    //         state: ParserState::Start(StartState::Start),
+    //     }
     // }
 
-    pub fn parse_line(&mut self, tokens: Vec<Token>) {
-        for token in tokens.into_iter() {
-            self.parse_token(token);
+    pub fn new_with_tokens(tokens: Vec<Token>) -> Parser {
+        Parser {
+            tokens: tokens,
+            constants: HashMap::<String, String>::new(),
+            stack: Vec::<Token>::new(),
         }
     }
 
-    pub fn parse_token(&mut self, token: Token) {
-        let debug = false;
-        if debug == true {
-            println!("<YASLC/Parser> Parsing token: {}", token);
-        }
+    /**
+     * Start parsing the input tokens
+     */
+    pub fn parse(&mut self) {
+        match self.program() {
+            ParseResult::Success => println!("Correctly parsed YASL program file."),
 
-        // Push a copy of the token onto our vector of tokens
-        self.push_token(token.clone());
-
-        match self.state.clone() {
-            ParserState::Start(s) => self.parse_start(token, s),
-            ParserState::Constants(s) => {
-                match token.token_type() {
-                    TokenType::Keyword(KeywordType::Begin) => {
-                        // we've ended the constants and are moving to the executed section
-                        self.state = ParserState::Body(BodyState::Start);
-                        self.parse_body(token, BodyState::Start);
-                    }
-                    _ => self.parse_assignment(token, s)
-                }
-            },
-            ParserState::Body(s) => self.parse_body(token, s),
-        }
-
-
-
-
-        // Otherwise, we have no idea what we're in the middle of and try and figure that
-        // out based on the next token
-        // match token.token_type() {
-        //     TokenType::Keyword => {
-        //         // If its a const declaration we can advance assignment state
-        //         if token.lexeme().to_lowercase() == "const" {
-        //             self.assignment_state = AssignmentState::Keyword;
-        //         }
-        //     }
-        //
-        //     _ => {},
-        // }
-    }
-
-    fn parse_start(&mut self, token: Token, state: StartState) {
-        // Advance the start state
-        let new_state = state.next(token.token_type());
-
-        // Check if the new state is either finished or invalid
-        match new_state {
-            StartState::Semicolon => {
-                // In the future, we may need to store the variables like the program
-                // name or even check them. We'll use the stack for this.
-                self.stack.clear();
-
-                self.state = ParserState::Constants(AssignmentState::None);
-            },
-            StartState::Invalid(err_string) => {
-                println!("<YASLC/Parser> ({}, {}) {}", token.line(), token.column(), err_string);
-            },
-            _ => {
-                self.state = ParserState::Start(new_state);
-            },
-        };
-    }
-
-    fn parse_assignment(&mut self, token: Token, state: AssignmentState) {
-        // Advance the assignment state
-        let new_state = state.next(token.token_type());
-
-        // Check to see where we are now.
-        match new_state {
-            AssignmentState::Semicolon => {
-                // Finished the assignment, get the values and store them
-                let mut column = 0;
-                let mut line = 0;
-                let mut lexeme = String::new();
-                let mut value = String::new();
-
-                // Pop the stack and find the value and lexeme
-                while let Some(t) = self.stack.pop() {
-                    match t.token_type() {
-                        TokenType::Keyword(_) => {
-                            column = t.column();
-                            line = t.line();
-                        }
-                        TokenType::Identifier => lexeme = t.lexeme(),
-                        TokenType::Number => value = t.lexeme(),
-                        _ => {},
-                    };
-                }
-
-                // Check that we don't already have a value for this lexeme
-                if let Some(_) = self.constants.get(&lexeme) {
-                    // We already have a value, print an error
-                    println!("<YASLC/Parser> ({}, {}) Unexpected reassignment of a constant.",
-                    line, column);
-                } else {
-                    // Push the lexeme and value to the hashmap
-                    self.constants.insert(lexeme, value);
-                }
-
-                // Reset the assignment state
-                self.state = ParserState::Constants(AssignmentState::None);
-
-                //self.print_constants();
-            }
-
-            AssignmentState::Invalid(ref err_string) => {
-                // We had an unexpected error parsing the token
-                println!("<YASLC/Parser> ({}:{}) Unexpected token: {}", token.line(), token.column(),
-                err_string);
-                self.state = ParserState::Constants(AssignmentState::None);
-            },
-            _ => {
-                self.state = ParserState::Constants(new_state);
-            },
+            _ => {},
         }
     }
 
-    fn parse_body(&mut self, token: Token, state: BodyState) {
-        // Advance to the next state
-        let new_state = state.next(token.token_type());
-
-        // enum BodyState {
-        //     // We've entered the body state
-        //     Start,
-        //
-        //     // Refering to the keyword begin
-        //     Begin,
-        //     Statements,
-        //     End,
-        //
-        //     Invalid(String)
-        // }
-        match new_state {
-            BodyState::End => {
-                // End
-                // We don't need to do anything YET
-                // TODO: do something
-            },
-            BodyState::Invalid(s) => {
-                println!("<YASLC/Parser> Unexpected error with parser: {}", s);
-            },
-            BodyState::Statements => {
-                // Check the statements state
-                match token.token_type() {
-                    TokenType::Semicolon => {
-                        let mut stack = self.pop_stack();
-                        stack.pop(); // take away the ;
-                        let e_stack = ExpressionStack::new_from_tokens(stack);
-                        e_stack.print_stack();
-                    },
-                    _ => {}, // We're still in the middle of an expression
-                }
-            },
-            BodyState::Begin => {
-                self.stack.clear();
-                self.state = ParserState::Body(new_state);
-            }
-            _ => {
-                self.state = ParserState::Body(new_state);
-            },
+    fn next_token(&mut self) -> Token {
+        if self.tokens.len() == 0 {
+            panic!("Attempted to remove a token for parsing but there are none left!");
         }
-
-
+        self.tokens.remove(0)
     }
 
-    fn push_token(&mut self, token: Token) {
-        self.tokens.push(token.clone());
-
-        // Push to the stack but check if its a constant
-        if let Some(value) = self.constants.get(&token.lexeme()) {
-            let mut value_token = token.clone();
-            value_token.set_lexeme(value.clone());
-            value_token.set_token_type(TokenType::Number);
-            self.stack.push(value_token);
+    fn print_error(&self, expected: Option<TokenType>, found: &Token) {
+        if let Some(e) = expected {
+            println!("<YASLC/Parser> ({}, {}) Error: Expected token {}, found {}.",
+                found.line(), found.column(), e, found);
         } else {
-            self.stack.push(token);
+            println!("<YASLC/Parser> ({}, {}) Error: Unexpected token.",
+                found.line(), found.column());
+        }
+
+    }
+
+    fn check(&mut self, t: TokenType, token: Token, expected: bool) -> ParseResult {
+        if token.is_type(t.clone()) == false {
+            if expected == true {
+                self.print_error(Some(t), &token);
+                return ParseResult::Unexpected(token);
+            } else {
+                return ParseResult::Incorrect(token);
+            }
+        }
+
+        ParseResult::Success
+    }
+
+    fn check_next(&mut self, t: TokenType, expected: bool) -> ParseResult {
+        let token = self.next_token();
+        self.check(t, token, expected)
+    }
+
+    fn check_next_for(&mut self, types: Vec<TokenType>, expected: bool) -> ParseResult {
+        let mut e = expected;
+        for t in types.into_iter() {
+            match self.check_next(t, e) {
+                ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
+                ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
+                _ => {},
+            }
+            e = true;
+        }
+        ParseResult::Success
+    }
+
+    // Takes a list of parse results and returns a single parse result. If it is unexpected
+    // or incorrect it will return the first unexpected or incorrect wrapped token.
+    //
+    // WARNING: If you are using a method that is combining rules for a grammar that may return
+    // empty you will throw away too many tokens. Always have one independent check from the
+    // result combination to prevent this.
+    fn combine_results(results: Vec<ParseResult>) -> ParseResult {
+        for r in results {
+            match r {
+                ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
+                ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
+                _ => {},
+            }
+        }
+        ParseResult::Success
+    }
+
+    /**
+     * Context free grammar rules
+     */
+    fn program(&mut self) -> ParseResult {
+        Parser::combine_results(vec![
+            self.check_next_for(vec![
+                TokenType::Keyword(KeywordType::Program),
+                TokenType::Identifier,
+                TokenType::Semicolon,
+                ], true),
+            self.block(),
+            self.check_next(TokenType::Period, true)
+        ])
+    }
+
+    fn block(&mut self) -> ParseResult {
+        Parser::combine_results(vec![
+            self.consts(),
+            self.vars(),
+            self.procs(),
+            self.check_next(TokenType::Keyword(KeywordType::Begin), true),
+            self.statements(),
+            self.check_next(TokenType::Keyword(KeywordType::End), true),
+        ])
+    }
+
+    fn consts(&mut self) -> ParseResult {
+        match self.token_const() {
+            ParseResult::Unexpected(t) => ParseResult::Unexpected(t),
+            ParseResult::Incorrect(t) => {
+                self.tokens.insert(0, t);
+                ParseResult::Success
+            }
+            _ => self.consts(),
         }
     }
 
-    pub fn print_constants(&self) {
-        for (lexeme, value) in self.constants.iter() {
-            println!("{}:{}", lexeme, value);
+    fn token_const(&mut self) -> ParseResult {
+        // Manually check first rule
+        match self.check_next(TokenType::Keyword(KeywordType::Const), false) {
+            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
+            ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
+            _ => {},
+        };
+
+        self.check_next_for(vec![
+            TokenType::Identifier,
+            TokenType::Equals,
+            TokenType::Number,
+            TokenType::Semicolon
+        ], true)
+    }
+
+    fn vars(&mut self) -> ParseResult {
+        match self.var() {
+            ParseResult::Unexpected(t) => ParseResult::Unexpected(t),
+            ParseResult::Incorrect(t) => {
+                self.tokens.insert(0, t);
+                ParseResult::Success
+            }
+            _ => self.vars(),
         }
     }
 
-    fn pop_stack(&mut self) -> Vec<Token> {
-        let stack = self.stack.clone();
+    fn var(&mut self) -> ParseResult {
+        match self.check_next(TokenType::Keyword(KeywordType::Var), false) {
+            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
+            ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
+            _ => {},
+        };
 
-        self.stack.clear();
-
-        return stack;
+        Parser::combine_results(vec![
+            self.check_next_for(vec![
+                TokenType::Identifier,
+                TokenType::Colon,
+            ], true),
+            self.token_type(),
+            self.check_next(TokenType::Semicolon, true)
+        ])
     }
-}
 
-// ParserState is the state of the parser relative to the input it has received
-#[derive(Clone)]
-enum ParserState {
-    Start(StartState),
-    Constants(AssignmentState),
-    Body(BodyState),
-}
+    fn token_type(&mut self) -> ParseResult {
+        let token = self.next_token();
 
-// StartState is the state of the parser in the start of the parsed input
-#[derive(Clone)]
-enum StartState {
-    Start,
-    Program,
-    ProgramName,
-    Semicolon,
-    Invalid(String),
-}
+        match self.check(TokenType::Keyword(KeywordType::Int), token.clone(), false) {
+            ParseResult::Success => return ParseResult::Success,
+            _ => {},
+        };
 
-impl StartState {
-    fn next(&self, token_type: TokenType) -> StartState {
-        match (self.clone(), token_type) {
-            (StartState::Start, TokenType::Keyword(KeywordType::Program)) => StartState::Program,
-            (StartState::Program, TokenType::Identifier) => StartState::ProgramName,
-            (StartState::ProgramName, TokenType::Semicolon) => StartState::Semicolon,
-            _ => {
-                // TODO: Find out what went wrong and return that error
+        match self.check(TokenType::Keyword(KeywordType::Bool), token.clone(), true) {
+            ParseResult::Success => return ParseResult::Success,
+            _ => {},
+        };
 
-                StartState::Invalid("Unexpected token.".to_string())
-            },
+        ParseResult::Unexpected(token)
+    }
+
+    fn procs(&mut self) -> ParseResult {
+        match self.token_proc() {
+            ParseResult::Unexpected(t) => ParseResult::Unexpected(t),
+            ParseResult::Incorrect(t) => {
+                self.tokens.insert(0, t);
+                ParseResult::Success
+            }
+            _ => self.procs(),
         }
     }
-}
 
-// AssignmentState is the state of the parser in the header const/var assignments
-#[derive(Clone)]
-enum AssignmentState {
-    None,
-    Keyword,
-    Identifier,
-    Equals,
-    Value,
-    Semicolon,
-    Invalid(String),
-}
+    fn token_proc(&mut self) -> ParseResult {
+        match self.check_next(TokenType::Keyword(KeywordType::Proc), false) {
+            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
+            ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
+            _ => {},
+        };
 
-impl AssignmentState {
-    fn next(&self, token_type: TokenType) -> AssignmentState {
-        match (self.clone(), token_type) {
-            (AssignmentState::None, TokenType::Keyword(KeywordType::Const)) => AssignmentState::Keyword,
-            (AssignmentState::Keyword, TokenType::Identifier) => AssignmentState::Identifier,
-            (AssignmentState::Identifier, TokenType::Equals) => AssignmentState::Equals,
-            (AssignmentState::Equals, TokenType::Number) => AssignmentState::Value,
-            (AssignmentState::Value, TokenType::Semicolon) => AssignmentState::Semicolon,
-            _ => {
-                // TODO: Find out what caused the error
+        Parser::combine_results(vec![
+            self.check_next_for(vec![
+                TokenType::Identifier,
+                TokenType::Colon
+            ], true),
+            self.param_list(),
+            self.check_next(TokenType::Semicolon, true),
+            self.block(),
+            self.check_next(TokenType::Semicolon, true),
+        ])
+    }
 
-                AssignmentState::Invalid("Unexpected input for constant assignment.".to_string())
-            },
+    fn param_list(&mut self) -> ParseResult {
+        Parser::combine_results(vec![
+            self.check_next(TokenType::LeftParen, false),
+            self.params(),
+            self.check_next(TokenType::RightParen, true),
+        ])
+    }
+
+    fn params(&mut self) -> ParseResult {
+        Parser::combine_results(vec![
+            self.param(),
+            self.follow_params(),
+        ])
+    }
+
+    fn follow_params(&mut self) -> ParseResult {
+        Parser::combine_results(vec![
+            self.check_next(TokenType::Comma, false),
+            self.params(),
+        ])
+    }
+
+    fn param(&mut self) -> ParseResult {
+        Parser::combine_results(vec![
+            self.check_next_for(vec![
+                TokenType::Identifier,
+                TokenType::Colon,
+            ], true),
+            self.token_type()
+        ])
+    }
+
+    fn statements(&mut self) -> ParseResult {
+        match self.statement() {
+            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
+            _ => {},
+        };
+
+        match self.statement_tail() {
+            ParseResult::Unexpected(t) => ParseResult::Unexpected(t),
+            ParseResult::Incorrect(t) => {
+                self.tokens.insert(0, t);
+                ParseResult::Success
+            }
+            ParseResult::Success => ParseResult::Success,
         }
     }
-}
 
-// BodyState is the state of the parser in the Body of the input
-#[derive(Clone)]
-enum BodyState {
-    // We've entered the body state
-    Start,
+    fn statement_tail(&mut self) -> ParseResult {
+        // Check the first one manually
+        match self.check_next(TokenType::Semicolon, false) {
+            ParseResult::Unexpected(t) => {
 
-    // Refering to the keyword "begin"
-    Begin,
-    Statements,
-    End,
+                return ParseResult::Unexpected(t);
+            }
+            ParseResult::Incorrect(t) => {
 
-    Invalid(String)
-}
+                return ParseResult::Incorrect(t);
+            }
+            _ => {},
+        };
 
-impl BodyState {
-    fn next(&self, token_type: TokenType) -> BodyState {
-        match (self.clone(), token_type) {
-            (BodyState::Start, TokenType::Keyword(KeywordType::Begin)) => {
-                BodyState::Begin
+        match self.statement() {
+            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
+            _ => {},
+        };
+
+        self.statement_tail()
+    }
+
+    fn statement(&mut self) -> ParseResult {
+        let token = self.next_token();
+
+        match self.check(TokenType::Keyword(KeywordType::If), token.clone(), false) {
+            ParseResult::Success => {
+                return Parser::combine_results(vec![
+                    self.expression(),
+                    self.check_next(TokenType::Keyword(KeywordType::Then), true),
+                    self.statement(),
+                    self.follow_if(),
+                ]);
             },
-            (BodyState::Begin, _) => {
-                BodyState::Statements
-            },
-            (BodyState::Statements, TokenType::Keyword(KeywordType::End)) => BodyState::End,
-            (BodyState::Statements, _) => BodyState::Statements,
-            _ => {
-                // TODO: Figure out what got us here
+            _ => {},
+        };
 
-                BodyState::Invalid("Unexpected token.".to_string())
+        match self.check(TokenType::Keyword(KeywordType::While), token.clone(), false) {
+            ParseResult::Success => {
+                return Parser::combine_results(vec![
+                    self.expression(),
+                    self.check_next(TokenType::Keyword(KeywordType::Do), true),
+                    self.statement()
+                ])
+            },
+            _ => {},
+        };
+
+        match self.check(TokenType::Keyword(KeywordType::Begin), token.clone(), false) {
+            ParseResult::Success => {
+                return self.follow_begin();
+            },
+            _ => {},
+        };
+
+        match self.check(TokenType::Identifier, token.clone(), false) {
+            ParseResult::Success => {
+                return self.follow_id();
+            },
+            _ => {},
+        };
+
+        match self.check(TokenType::Keyword(KeywordType::Prompt), token.clone(), false) {
+            ParseResult::Success => {
+                return Parser::combine_results(vec![
+                    self.check_next(TokenType::String, true),
+                    self.follow_prompt(),
+                ]);
+            },
+            _ => {},
+        };
+
+        match self.check(TokenType::Keyword(KeywordType::Print), token.clone(), false) {
+            ParseResult::Success => {
+                return self.follow_print();
+            },
+            _ => {},
+        };
+
+        ParseResult::Unexpected(token)
+    }
+
+    fn follow_if(&mut self) -> ParseResult {
+        match self.check_next(TokenType::Keyword(KeywordType::Else), false) {
+            ParseResult::Incorrect(t) => {
+                self.tokens.insert(0, t);
+                ParseResult::Success
+            },
+            ParseResult::Success => {
+                self.statement()
+            },
+            ParseResult::Unexpected(t) => {
+                ParseResult::Unexpected(t)
             }
         }
     }
+
+    fn follow_id(&mut self) -> ParseResult {
+        match self.check_next(TokenType::Equals, false) {
+            ParseResult::Incorrect(t) => {
+                self.tokens.insert(0, t);
+            },
+            ParseResult::Success => {
+                return self.expression();
+            },
+            _ => {},
+        };
+
+        match self.check_next(TokenType::LeftParen, false) {
+            ParseResult::Incorrect(t) => {
+                self.tokens.insert(0, t);
+            },
+            ParseResult::Success => {
+                return Parser::combine_results(vec![
+                    self.expression(),
+                    self.follow_expression(),
+                    self.check_next(TokenType::RightParen, true),
+                ]);
+            },
+            _ => {},
+        }
+
+        ParseResult::Success
+    }
+
+    fn follow_expression(&mut self) -> ParseResult {
+        match self.check_next(TokenType::Comma, false) {
+            ParseResult::Incorrect(t) => {
+                self.tokens.insert(0, t);
+                return ParseResult::Success;
+            },
+            _ => {},
+        };
+
+        match self.expression() {
+            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
+            _ => {},
+        };
+
+        return self.follow_expression();
+    }
+
+    fn follow_begin(&mut self) -> ParseResult {
+        match self.statement() {
+            ParseResult::Unexpected(t) => {
+                self.tokens.insert(0, t);
+            },
+            ParseResult::Success => {
+                match self.statement_tail() {
+                    ParseResult::Incorrect(t) => {
+                        self.tokens.insert(0, t);
+                        return ParseResult::Success;
+                    },
+                    ParseResult::Success => {
+                        return self.check_next(TokenType::Keyword(KeywordType::End), true);
+                    },
+                    _ => {},
+                };
+
+                return Parser::combine_results(vec![
+                    self.statement_tail(),
+
+                ]);
+            },
+            _ => {},
+        };
+
+        return self.check_next(TokenType::Keyword(KeywordType::End), true);
+    }
+
+    fn expression(&mut self) -> ParseResult {
+        let mut stack = Vec::<Token>::new();
+
+        while self.tokens.is_empty() == false {
+            let t = self.tokens.remove(0);
+            match self.check(TokenType::Semicolon, t.clone(), false) {
+                ParseResult::Incorrect(t) => {
+                    // Push to stack
+                    stack.push(t);
+                },
+                ParseResult::Success => {
+                    let expression_stack = ExpressionStack::new_from_tokens(stack);
+                    if expression_stack.is_valid() == true {
+                        self.tokens.insert(0, t);
+                        return ParseResult::Success;
+                    } else {
+                        return ParseResult::Unexpected(t);
+                    }
+                },
+                _ => {},
+            };
+        }
+
+        return ParseResult::Unexpected(stack.pop().unwrap());
+    }
+
+    fn follow_prompt(&mut self) -> ParseResult {
+        self.check_next_for(vec![
+            TokenType::Comma,
+            TokenType::Identifier,
+        ], true)
+    }
+
+    fn follow_print(&mut self) -> ParseResult {
+        match self.check_next(TokenType::String, false) {
+            ParseResult::Success => return ParseResult::Success,
+            ParseResult::Incorrect(t) => {
+                self.stack.insert(0, t);
+            },
+            _ => {},
+        };
+        self.expression()
+    }
+}
+
+enum ParseResult {
+    // The parser should continue parsing starting with the next token
+    Success,
+
+    // The parser should retry the returned token with a different rule
+    Incorrect(Token),
+
+    // The parser reached an unexpected token, should return an error and stop
+    Unexpected(Token),
 }
 
 #[derive(PartialEq)]
@@ -339,6 +535,7 @@ enum Expression {
 }
 
 impl Expression {
+    // Creates a new expression from a token
     fn from_token(t: Token) -> Option<Expression> {
         match t.token_type() {
             TokenType::Number => Some(Expression::Operand(t.lexeme())),
@@ -406,23 +603,6 @@ impl PartialOrd for Expression {
     }
 }
 
-// impl PartialEq for Expression {
-//     fn eq(&self, other: &Expression) -> bool {
-//         match self {
-//             &Operator(o) => {
-//                 match other {
-//
-//                 }
-//             },
-//             &Operand(o) => {
-//                 match other {
-//
-//                 }
-//             }
-//         }
-//     }
-// }
-
 impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -436,6 +616,8 @@ impl fmt::Display for Expression {
     }
 }
 
+// ExpressionStack is responsible for push expressions to the stack as well as
+// managing operator precedence for expressions
 struct ExpressionStack {
     expressions: Vec<Expression>,
 }
@@ -459,7 +641,7 @@ impl ExpressionStack {
         }
 
         while let Some(e) = e_stack.expressions.pop() {
-            println!("{}", e);
+            //println!("{}", e);
         }
 
         e_stack
@@ -467,7 +649,7 @@ impl ExpressionStack {
 
     fn push_expression(&mut self, e: Expression) {
         match e {
-            Expression::Operand(l) => println!("{}", l),
+            Expression::Operand(l) => {},
             Expression::Operator(_) => {
                 // if the stack is empty, just push it
                 if self.expressions.len() <= 0 {
@@ -480,9 +662,9 @@ impl ExpressionStack {
                     } else {
                         // Pop items off the stack, write to output, until we get to one with lower
                         // priority (or the stack empties), then push item to stack
-                        while e <= self.expressions[self.expressions.len() - 1] {
+                        while e <= self.expressions[self.expressions.len() - 1] && self.expressions.len() > 1 {
                             if let Some(x) = self.expressions.pop() {
-                                println!("{}", x);
+                                //println!("{}", x);
                             } else {
                                 break;
                             }
@@ -492,6 +674,10 @@ impl ExpressionStack {
                 } // else if parenthesis
             }
         }
+    }
+
+    fn is_valid(&self) -> bool {
+        true
     }
 
     fn print_stack(&self) {

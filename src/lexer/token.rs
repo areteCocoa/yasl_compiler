@@ -1,4 +1,3 @@
-
 /*
  * Token.rs
  *
@@ -26,7 +25,9 @@ pub enum TokenType {
 
     // Punctuation
     Semicolon,
+    Colon,
     Period,
+    Comma,
     LeftParen,
     RightParen,
 
@@ -56,7 +57,9 @@ impl fmt::Display for TokenType {
             },
 
             &TokenType::Semicolon => write!(f, "SEMI"),
+            &TokenType::Colon => write!(f, "COLON"),
             &TokenType::Period => write!(f, "PERIOD"),
+            &TokenType::Comma => write!(f, "COMMA"),
             &TokenType::LeftParen => write!(f, "LPAREN"),
             &TokenType::RightParen => write!(f, "RPAREN"),
 
@@ -151,6 +154,10 @@ impl Token {
 
     pub fn set_token_type(&mut self, t: TokenType) {
         self.token_type = t;
+    }
+
+    pub fn is_type(&self, t: TokenType) -> bool {
+        self.token_type == t
     }
 
     pub fn lexeme(&self) -> String {
@@ -386,8 +393,12 @@ impl TokenState {
                     }
                 } else if input == '"' {
                     TokenState::String
-                } else if input == '.' || input == ';' {
+                } else if input == '.' {
+                    TokenState::Accept(TokenAction::Accept, TokenType::Period)
+                } else if input == ';' {
                     TokenState::Accept(TokenAction::Accept, TokenType::Semicolon)
+                } else if input == ',' {
+                    TokenState::Accept(TokenAction::Accept, TokenType::Comma)
                 } else if input == '+' || input == '-' || input == '*' || input == '=' {
                     TokenState::Accept(TokenAction::Accept, match input {
                         '+' => TokenType::Plus,
@@ -396,7 +407,9 @@ impl TokenState {
                         '=' => TokenType::Equals,
                         _ => TokenType::Invalid
                     })
-                } else if input == '/' {
+                } else if input == ':' {
+                    TokenState::Accept(TokenAction::Accept, TokenType::Colon)
+                }else if input == '/' {
                     TokenState::CommentSlashStart
                 } else if input == '{' {
                     TokenState::CommentCurly

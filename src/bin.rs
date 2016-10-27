@@ -50,15 +50,19 @@ fn main() {
     //     },
     // };
 
-    let mut scanner = yasl_compiler::lexer::scanner::Scanner::new_from_file(input);
-    match scanner.read_file() {
+    let scanner = yasl_compiler::lexer::scanner::Scanner::new_from_file(input);
+    let tokens = match scanner.read_file() {
         Ok(tokens) => {
-            for t in tokens.iter() {
-                println!("{}", t);
-            }
+            tokens
         }
-        Err(e) => println!("Did not successfully read file because {}", e),
-    }
+        Err(e) => {
+            println!("Did not successfully read file because {}", e);
+            return;
+        },
+    };
+
+    let mut parser = yasl_compiler::parser::Parser::new_with_tokens(tokens);
+    parser.parse();
 
     // if file_name == "-stdin" {
     //     //let mut scanner = yasl_compiler::lexer::scanner::Scanner::new();
