@@ -248,7 +248,7 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
-        match self.check(TokenType::Equals) {
+        match self.check(TokenType::Assign) {
             ParserState::Continue => {},
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
@@ -628,7 +628,7 @@ impl Parser {
             println!("<YASLC/Parser> Starting FOLLOW-ID rule.");
         }
 
-        match self.check(TokenType::Equals) {
+        match self.check(TokenType::Assign) {
             ParserState::Continue => {
                 return self.expression();
             },

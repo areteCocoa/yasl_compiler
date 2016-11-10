@@ -35,7 +35,15 @@ pub enum TokenType {
     Plus,
     Minus,
     Star,
-    Equals,
+    Assign,
+
+    // Comparators
+    GreaterThan,
+    LessThan,
+    GreaterThanOrEqual,
+    LessThanOrEqual,
+    EqualTo,
+    NotEqualTo,
 
     // Misc
     EOFile,
@@ -66,7 +74,15 @@ impl fmt::Display for TokenType {
             &TokenType::Plus => write!(f, "PLUS"),
             &TokenType::Minus => write!(f, "MINUS"),
             &TokenType::Star => write!(f, "STAR"),
-            &TokenType::Equals => write!(f, "EQUALS"),
+            &TokenType::Assign => write!(f, "EQUALS"),
+
+            &TokenType::GreaterThan => write!(f, "GREATERTHAN"),
+            &TokenType::LessThan => write!(f, "LESSTHAN"),
+            &TokenType::GreaterThanOrEqual => write!(f, "GREATERTHANOREQUAL"),
+            &TokenType::LessThanOrEqual => write!(f, "LESSTHANOREQUAL"),
+            &TokenType::EqualTo => write!(f, "EQUALTO"),
+            &TokenType::NotEqualTo => write!(f, "NOTEQUALTO="),
+
             &TokenType::EOFile => write!(f, "EOF"),
             &TokenType::Invalid => write!(f, "Invalid"),
         }
@@ -367,6 +383,10 @@ enum TokenState {
     CommentSlashStart, // 6
     CommentSlash, // 7
 
+    GTStart,
+    LTStart,
+    EqualStart,
+
     Accept(TokenAction, TokenType),
     Unaccepted,
 }
@@ -402,14 +422,18 @@ impl TokenState {
                     TokenState::Accept(TokenAction::Accept, TokenType::Semicolon)
                 } else if input == ',' {
                     TokenState::Accept(TokenAction::Accept, TokenType::Comma)
-                } else if input == '+' || input == '-' || input == '*' || input == '=' {
-                    TokenState::Accept(TokenAction::Accept, match input {
-                        '+' => TokenType::Plus,
-                        '-' => TokenType::Minus,
-                        '*' => TokenType::Star,
-                        '=' => TokenType::Equals,
-                        _ => TokenType::Invalid
-                    })
+                } else if input == '+' {
+                    TokenState::Accept(TokenAction::Accept, TokenType::Plus)
+                } else if input == '-' {
+                    TokenState::Accept(TokenAction::Accept, TokenType::Minus)
+                } else if input == '*' {
+                    TokenState::Accept(TokenAction::Accept, TokenType::Star)
+                } else if input == '>' {
+                    TokenState::GTStart
+                } else if input == '<' {
+                    TokenState::LTStart
+                } else if input == '=' {
+                    TokenState::EqualStart
                 } else if input == ':' {
                     TokenState::Accept(TokenAction::Accept, TokenType::Colon)
                 }else if input == '/' {
@@ -475,6 +499,32 @@ impl TokenState {
                     TokenState::Start
                 } else {
                     TokenState::CommentSlash
+                }
+            }
+
+            TokenState::GTStart => {
+                if input == '=' {
+                    return TokenState::Accept(TokenAction::Accept, TokenType::GreaterThanOrEqual);
+                } else {
+                    return TokenState::Accept(TokenAction::AcceptPushback, TokenType::GreaterThan);
+                }
+            }
+
+            TokenState::LTStart => {
+                if input == '=' {
+                    return TokenState::Accept(TokenAction::Accept, TokenType::LessThanOrEqual);
+                } else if input == '>' {
+                    return TokenState::Accept(TokenAction::Accept, TokenType::NotEqualTo);
+                } else {
+                    return TokenState::Accept(TokenAction::AcceptPushback, TokenType::LessThan);
+                }
+            }
+
+            TokenState::EqualStart => {
+                if input == '=' {
+                    return TokenState::Accept(TokenAction::Accept, TokenType::EqualTo);
+                } else {
+                    return TokenState::Accept(TokenAction::AcceptPushback, TokenType::Assign);
                 }
             }
 
