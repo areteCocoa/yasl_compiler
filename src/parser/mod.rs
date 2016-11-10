@@ -3,13 +3,15 @@
 /// using an LL(1) parser.
 ///
 
+pub mod symbol;
 
 use super::lexer::token::{Token, TokenType, KeywordType};
 
-use std::collections::HashMap;
 use std::cmp::Ordering;
 
 use std::fmt;
+
+use self::symbol::{Symbol, SymbolTable, SymbolType};
 
 const VERBOSE: bool = true;
 
@@ -22,7 +24,7 @@ pub struct Parser {
     // The last popped token
     last_token: Option<Token>,
 
-    constants: HashMap<String, String>,
+    symbol_table: SymbolTable,
 
     stack: Vec<Token>,
 }
@@ -40,7 +42,7 @@ impl Parser {
 
             last_token: None,
 
-            constants: HashMap::<String, String>::new(),
+            symbol_table: SymbolTable::empty(),
 
             stack: Vec::<Token>::new(),
         }
