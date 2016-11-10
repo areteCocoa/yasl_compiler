@@ -44,9 +44,6 @@ impl SymbolTable {
     // Adds (binds) a new symbol to the table
     fn add_symbol(&mut self, s: Symbol) {
         self.symbols.insert(0, s);
-
-        println!("A new symbol was added, printing table.");
-        self.print_table();
     }
 
     // Get (lookup) a symbol on the table
@@ -67,14 +64,13 @@ impl SymbolTable {
 
     // Enters the next table
     pub fn enter(self) -> SymbolTable {
-        println!("The table has entered and referenced itself.");
-
         self.child_table()
     }
 
     // Exits the current table, returning the previous
     pub fn exit(self) -> Option<SymbolTable> {
-        println!("Table attempting to exit and dereference itself.");
+        println!("Table attempting to exit and dereference itself. Printing table.");
+        self.print_table();
 
         match self.old_table {
             Some(b) => Some(*b),
@@ -102,7 +98,7 @@ impl SymbolTable {
 #[derive(Clone)]
 pub struct Symbol {
     identifier: String,
-    symbol_type: SymbolType,
+    pub symbol_type: SymbolType,
 }
 
 #[derive(Clone)]

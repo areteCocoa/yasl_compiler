@@ -13,7 +13,7 @@ use std::fmt;
 
 use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
 
-const VERBOSE: bool = true;
+const VERBOSE: bool = false;
 
 #[allow(dead_code)]
 
@@ -1079,7 +1079,12 @@ impl ExpressionStack {
                             }
                             // TODO: Set to variable to get value
                             match self.table.get(&*o) {
-                                Some(v) => v,
+                                Some(v) => {
+                                    match v.symbol_type {
+                                        SymbolType::Procedure => panic!("<YASLC/ExpParser> Error: Illicitly used PROC \'{}\' as a variable!"),
+                                        _ => {}
+                                    }
+                                },
                                 None => panic!("<YASLC/ExpParser> Error: Used symbol \'{}\' that is not in the symbol table!", o),
                             };
                         }
