@@ -86,7 +86,7 @@ impl Scanner {
 
         // Read the file to the buffer
         match self.file.read_to_string(&mut buffer){
-            Ok(size) => {
+            Ok(_) => {
                 // println!("File read of size {}", size);
             },
             Err(e) => {
@@ -107,7 +107,7 @@ impl Scanner {
     pub fn read(&mut self) {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
-            Ok(n) => self.handle_line(input.clone()),
+            Ok(_) => self.handle_line(input.clone()),
             Err(e) => println!("Error reading from stdin: {}", e),
         }
     }

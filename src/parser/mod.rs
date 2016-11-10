@@ -897,20 +897,22 @@ impl ExpressionStack {
             if let Some(exp) = Expression::from_token(t) {
                 e_stack.push_expression(exp);
             } else {
-
+                if VERBOSE == true {
+                    println!("<YASLC/ExpParser> Warning: attempted to push invalid token onto token stack.");
+                }
             }
         }
 
-        while let Some(e) = e_stack.expressions.pop() {
-            //println!("{}", e);
-        }
+        // while let Some(e) = e_stack.expressions.pop() {
+        //     //println!("{}", e);
+        // }
 
         e_stack
     }
 
     fn push_expression(&mut self, e: Expression) {
         match e {
-            Expression::Operand(l) => {},
+            Expression::Operand(_) => {},
             Expression::Operator(_) => {
                 // if the stack is empty, just push it
                 if self.expressions.len() <= 0 {
@@ -924,7 +926,7 @@ impl ExpressionStack {
                         // Pop items off the stack, write to output, until we get to one with lower
                         // priority (or the stack empties), then push item to stack
                         while e <= self.expressions[self.expressions.len() - 1] && self.expressions.len() > 1 {
-                            if let Some(x) = self.expressions.pop() {
+                            if let Some(_) = self.expressions.pop() {
                                 //println!("{}", x);
                             } else {
                                 break;
@@ -941,9 +943,10 @@ impl ExpressionStack {
         true
     }
 
-    fn print_stack(&self) {
-        for e in self.expressions.iter() {
-            println!("{}", e);
-        }
-    }
+    // TODO: Move to display trait
+    // fn print_stack(&self) {
+    //     for e in self.expressions.iter() {
+    //         println!("{}", e);
+    //     }
+    // }
 }

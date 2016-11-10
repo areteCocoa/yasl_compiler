@@ -266,7 +266,6 @@ impl TokenBuilder {
 
 
                 let result = match action {
-                    TokenAction::Ignore => None,
                     _ => {
                         Some(Token {
                            token_type: self.final_type(),
@@ -395,7 +394,6 @@ enum TokenState {
 enum TokenAction {
     Accept,
     AcceptPushback,
-    Ignore,
 }
 
 impl TokenState {
