@@ -11,7 +11,7 @@ use std::cmp::Ordering;
 
 use std::fmt;
 
-use self::symbol::{Symbol, SymbolTable, SymbolType};
+use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
 
 const VERBOSE: bool = true;
 
@@ -208,12 +208,14 @@ impl Parser {
         match self.statements() {
             ParserState::Continue => {},
             _ => return ParserState::Done(ParserResult::Unexpected),
-        }
+        };
 
-        match self.check(TokenType::Keyword(KeywordType::End)) {
+        let result = match self.check(TokenType::Keyword(KeywordType::End)) {
             ParserState::Continue => ParserState::Continue,
             _ => return ParserState::Done(ParserResult::Unexpected),
-        }
+        };
+
+        result
     }
 
     /*
@@ -245,8 +247,10 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Incorrect),
         };
 
-        match self.check(TokenType::Identifier) {
-            ParserState::Continue => {},
+        let id = match self.check(TokenType::Identifier) {
+            ParserState::Continue => {
+                self.last_token().unwrap().lexeme()
+            },
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
@@ -255,10 +259,47 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
+        // TODO: Implement detecting value type based on lexeme
+        // let (t, _) = match self.check(TokenType::Number) {
+        //     ParserState::Continue => {
+        //         let l = self.last_token().unwrap();
+        //
+        //         match l.token_type() {
+        //             TokenType::Keyword(KeywordType::Int) => {
+        //                 let n = match l.lexeme().parse::<i32>() {
+        //                     Ok(x) => x,
+        //                     Err(_) => {
+        //                         println!("<YASLC/Parser> Token had type int but could not convert to digit!");
+        //                         return ParserState::Done(ParserResult::Unexpected);
+        //                     }
+        //                 };
+        //                 (SymbolValueType::Int, n)
+        //             },
+        //             TokenType::Keyword(KeywordType::Bool) => {
+        //                 match &*l.lexeme() {
+        //                     "true" => (SymbolValueType::Bool, 1),
+        //                     "false" => (SymbolValueType::Bool, 0),
+        //                     _ => {
+        //                         println!("<YASLC/Parser> Token had type int but could not convert to digit!");
+        //                         return ParserState::Done(ParserResult::Unexpected);
+        //                     }
+        //                 }
+        //             },
+        //             _ => {
+        //                 println!("Something bad happened.");
+        //                 return ParserState::Done(ParserResult::Unexpected);
+        //             }
+        //         }
+        //     },
+        //
+        // };
+
         match self.check(TokenType::Number) {
             ParserState::Continue => {},
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
+
+        self.symbol_table.add(id, SymbolType::Constant(SymbolValueType::Bool));
 
         match self.check(TokenType::Semicolon) {
             ParserState::Continue => ParserState::Continue,
@@ -295,8 +336,8 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Incorrect),
         };
 
-        match self.check(TokenType::Identifier) {
-            ParserState::Continue => {},
+        let id = match self.check(TokenType::Identifier) {
+            ParserState::Continue => {self.last_token().unwrap().lexeme()},
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
@@ -305,10 +346,22 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
-        match self.token_type() {
-            ParserState::Continue => {},
+        let t = match self.token_type() {
+            ParserState::Continue => {
+                match self.last_token().unwrap().token_type() {
+                    TokenType::Keyword(KeywordType::Bool) => SymbolValueType::Bool,
+                    TokenType::Keyword(KeywordType::Int) => SymbolValueType::Int,
+                    _ => {
+                        println!("<YASLC/Parser> Error: Unrecognized type for var found {}.", self.last_token().unwrap());
+                        return ParserState::Done(ParserResult::Unexpected);
+                    }
+                }
+
+            },
             _ => return ParserState::Done(ParserResult::Unexpected),
-        }
+        };
+
+        self.symbol_table.add(id, SymbolType::Variable(t));
 
         self.check(TokenType::Semicolon)
     }
@@ -347,15 +400,21 @@ impl Parser {
             println!("<YASLC/Parser> Starting PROC rule.");
         }
 
+        self.symbol_table = self.symbol_table.clone().enter();
+
         match self.check(TokenType::Keyword(KeywordType::Proc)) {
             ParserState::Continue => ParserState::Continue,
             _ => return ParserState::Done(ParserResult::Incorrect),
         };
 
-        match self.check(TokenType::Identifier) {
-            ParserState::Continue => ParserState::Continue,
+        let id = match self.check(TokenType::Identifier) {
+            ParserState::Continue => {
+                self.last_token().unwrap().lexeme()
+            },
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
+
+        self.symbol_table.add(id, SymbolType::Procedure);
 
         match self.param_list() {
             ParserState::Continue => {},
@@ -372,10 +431,19 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
-        match self.check(TokenType::Semicolon) {
+        let r = match self.check(TokenType::Semicolon) {
             ParserState::Continue => ParserState::Continue,
             _ => ParserState::Done(ParserResult::Unexpected),
-        }
+        };
+
+        self.symbol_table = match self.symbol_table.clone().exit(){
+            Some(s) => s,
+            None => {
+                panic!("A symbol table has been popped where it shouldn't have been and we're in big trouble.");
+            }
+        };
+
+        r
     }
 
     // PARAM-LIST rule
@@ -708,7 +776,10 @@ impl Parser {
         }
 
         match self.check(TokenType::String) {
-            ParserState::Continue => return ParserState::Continue,
+            ParserState::Continue => {
+                println!("Printing string {}", self.last_token().unwrap().lexeme());
+                return ParserState::Continue
+            },
             _ => self.insert_last_token(),
         }
 
@@ -726,7 +797,7 @@ impl Parser {
             let t = self.tokens.remove(0);
             match self.check_token(TokenType::Semicolon, t.clone()) {
                 ParserState::Continue => {
-                    let expression_stack = ExpressionStack::new_from_tokens(stack);
+                    let expression_stack = ExpressionStack::new_from_tokens(stack, self.symbol_table.clone());
                     if expression_stack.is_valid() == true {
                         self.tokens.insert(0, t);
                         return ParserState::Continue;
@@ -742,8 +813,13 @@ impl Parser {
                                 println!("<YASLC/Parser> Exiting EXPRESSION rule because we found END token.");
                             }
 
-                            self.tokens.insert(0, t);
-                            return ParserState::Continue;
+                            let expression_stack = ExpressionStack::new_from_tokens(stack, self.symbol_table.clone());
+                            if expression_stack.is_valid() == true {
+                                self.tokens.insert(0, t);
+                                return ParserState::Continue;
+                            } else {
+                                return ParserState::Done(ParserResult::Unexpected);
+                            }
                         },
                         _ => {},
                     };
@@ -786,7 +862,7 @@ enum ParserResult {
  *
  */
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 enum Expression {
     // +, -, etc
     // TokenType is wrapped to store what kind of operator this is
@@ -811,6 +887,8 @@ impl Expression {
 
 
             TokenType::Keyword(KeywordType::Print) => Some(Expression::Operator(t.token_type())),
+
+            TokenType::Identifier => Some(Expression::Operand(t.lexeme())),
 
             _ => {
                 None
@@ -939,24 +1017,31 @@ impl fmt::Display for Expression {
 // managing operator precedence for expressions
 struct ExpressionStack {
     expressions: Vec<Expression>,
+
+    table: SymbolTable,
 }
 
 impl ExpressionStack {
-    fn new() -> ExpressionStack {
+    fn new(table: SymbolTable) -> ExpressionStack {
         ExpressionStack {
             expressions: Vec::<Expression>::new(),
+            table: table
         }
     }
 
-    fn new_from_tokens(tokens: Vec<Token>) -> ExpressionStack {
-        let mut e_stack = ExpressionStack::new();
+    fn new_from_tokens(tokens: Vec<Token>, table: SymbolTable) -> ExpressionStack {
+        let mut e_stack = ExpressionStack::new(table);
 
         for t in tokens.into_iter() {
             if let Some(exp) = Expression::from_token(t) {
+
+
                 e_stack.push_expression(exp);
+
+
             } else {
                 if VERBOSE == true {
-                    println!("<YASLC/ExpParser> Warning: attempted to push invalid token onto token stack.");
+                    println!("<YASLC/ExpParser> Warning: attempted to push invalid token onto expression stack.");
                 }
             }
         }
@@ -969,6 +1054,45 @@ impl ExpressionStack {
     }
 
     fn push_expression(&mut self, e: Expression) {
+        match e.clone() {
+            Expression::Operand(o) => {
+                if VERBOSE == true {
+                    println!("<YASLC/ExpParser> Attempting to determine the value of operand.");
+                }
+
+                // Check if the token is a symbol or a literal
+                match o.parse::<i32>() {
+                    Ok(_) => {
+                        if VERBOSE == true {
+                            println!("<YASLC/ExpParser> Detected integer literal.");
+                        }
+                    },
+                    Err(_) => {
+                        if o == "true" || o == "false" {
+                            if VERBOSE == true {
+                                println!("<YASLC/ExpParser> Detected boolean literal.");
+                            }
+                        } else {
+                            // It is a symbol
+                            if VERBOSE == true {
+                                println!("<YASLC/ExpParser> Detected a symbol. Looking up in the symbol table.");
+                            }
+                            // TODO: Set to variable to get value
+                            match self.table.get(&*o) {
+                                Some(v) => v,
+                                None => panic!("<YASLC/ExpParser> Error: Used symbol \'{}\' that is not in the symbol table!", o),
+                            };
+                        }
+                    }
+                };
+            },
+            Expression::Operator(_) => {
+                if VERBOSE == true {
+                    println!("<YASLC/ExpParser> Don't need to determine the value, is an operator.");
+                }
+            },
+        }
+
         match e {
             Expression::Operand(_) => {},
             Expression::Operator(_) => {
