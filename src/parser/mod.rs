@@ -802,7 +802,11 @@ impl Expression {
             TokenType::Number => Some(Expression::Operand(t.lexeme())),
 
             TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Keyword(KeywordType::Div)
-            | TokenType::Keyword(KeywordType::Mod) => Some(Expression::Operator(t.token_type())),
+            | TokenType::Keyword(KeywordType::Mod) | TokenType::GreaterThan | TokenType::LessThan
+            | TokenType::GreaterThanOrEqual | TokenType::LessThanOrEqual | TokenType::EqualTo
+            | TokenType::NotEqualTo => Some(Expression::Operator(t.token_type())),
+
+
 
             TokenType::Keyword(KeywordType::Print) => Some(Expression::Operator(t.token_type())),
 
@@ -818,33 +822,85 @@ impl PartialOrd for Expression {
         use self::Expression::*;
 
         match self {
-            &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => {
-                // + or -
-                match other {
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Less),
-
-                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
-                    | &Operator(TokenType::Keyword(KeywordType::Mod))
-                    | &Operand(_) => Some(Ordering::Less),
-
-                    _ => None,
-                }
-            },
-
+            // *, div, mod (4)
             &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
             | &Operator(TokenType::Keyword(KeywordType::Mod)) => {
                 // * or div or mod
                 match other {
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Greater),
-
                     &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))|
                     &Operator(TokenType::Keyword(KeywordType::Mod)) => Some(Ordering::Less),
+
+                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Greater),
+
+                    &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
+                    | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual)
+                        => Some(Ordering::Greater),
+
+                    &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Greater),
 
                     &Operand(_) => Some(Ordering::Less),
 
                     _ => None,
                 }
             },
+
+            // +, - (3)
+            &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => {
+                // + or -
+                match other {
+                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
+                    | &Operator(TokenType::Keyword(KeywordType::Mod))
+                    | &Operand(_) => Some(Ordering::Less),
+
+                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Less),
+
+                    &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
+                    | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual)
+                        => Some(Ordering::Greater),
+
+                    &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Greater),
+
+                    _ => None,
+                }
+            },
+
+            // >, <, >=, <= (2)
+            &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
+            | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual) => {
+                match other {
+                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
+                    | &Operator(TokenType::Keyword(KeywordType::Mod))
+                    | &Operand(_) => Some(Ordering::Less),
+
+                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Less),
+
+                    &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
+                    | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual)
+                        => Some(Ordering::Less),
+
+                    &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Greater),
+
+                    _ => None,
+                }
+            },
+
+            &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => {
+                match other {
+                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
+                    | &Operator(TokenType::Keyword(KeywordType::Mod))
+                    | &Operand(_) => Some(Ordering::Less),
+
+                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Less),
+
+                    &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
+                    | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual)
+                        => Some(Ordering::Less),
+
+                    &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Less),
+
+                    _ => None,
+                }
+            }
 
             &Operand(_) => {
                 // Any number
