@@ -268,6 +268,9 @@ impl TokenBuilder {
             TokenState::Unaccepted => {
                 let lexeme = self.lexeme.clone();
 
+                println!("<YASLC/Lexer> Warning: Invalid token found at ({}, {}) with lexeme \"{}\".",
+                    self.line, self.column, lexeme);
+
                 Some(Token {
                     token_type: TokenType::Invalid,
                     line: self.line,
@@ -381,7 +384,7 @@ impl TokenState {
             // Starting state
             TokenState::Start => {
                 // Check for ignored characters first
-                if input == '\n' || input == ' ' {
+                if input == '\r' || input == '\n' || input == ' ' {
                     TokenState::Start
                 } else if input.is_alphabetic() {
                     TokenState::Identifier
@@ -415,6 +418,8 @@ impl TokenState {
                     TokenState::CommentCurly
                 }
                 else {
+                    let i = input as u8;
+                    println!("<YASLC/Lexer> Internal warning: unrecognized character with ASCII value '{}' found.", i);
                     TokenState::Unaccepted
                 }
             },
@@ -422,7 +427,7 @@ impl TokenState {
             TokenState::Identifier => {
                 if input.is_alphabetic(){
                     TokenState::Identifier
-                } else if let Some(input_digit) = input.to_digit(10) {
+                } else if let Some(_) = input.to_digit(10) {
                     TokenState::Identifier
                 } else {
                     TokenState::Accept(TokenAction::AcceptPushback, TokenType::Identifier)
@@ -430,7 +435,7 @@ impl TokenState {
             }
 
             TokenState::Number => {
-                if let Some(input_digit) = input.to_digit(10) {
+                if let Some(_) = input.to_digit(10) {
                     TokenState::Number
                 } else {
                     TokenState::Accept(TokenAction::AcceptPushback, TokenType::Number)

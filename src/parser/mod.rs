@@ -11,9 +11,16 @@ use std::cmp::Ordering;
 
 use std::fmt;
 
+const VERBOSE: bool = true;
+
+#[allow(dead_code)]
+
 /// The Parser struct can check syntax for a set of tokens for validity.
 pub struct Parser {
     tokens: Vec<Token>,
+
+    // The last popped token
+    last_token: Option<Token>,
 
     constants: HashMap<String, String>,
 
@@ -27,20 +34,14 @@ pub struct Parser {
  *  correct rule.
  */
 impl Parser {
-    // pub fn new() -> Parser {
-    //     Parser {
-    //         tokens: Vec::<Token>::new(),
-    //         constants: HashMap::<String, String>::new(),
-    //         stack: Vec::<Token>::new(),
-    //
-    //         state: ParserState::Start(StartState::Start),
-    //     }
-    // }
-
     pub fn new_with_tokens(tokens: Vec<Token>) -> Parser {
         Parser {
             tokens: tokens,
+
+            last_token: None,
+
             constants: HashMap::<String, String>::new(),
+
             stack: Vec::<Token>::new(),
         }
     }
@@ -50,484 +51,725 @@ impl Parser {
      */
     pub fn parse(&mut self) {
         match self.program() {
-            ParseResult::Success => println!("Correctly parsed YASL program file."),
+            ParserState::Done(r) => {
+                match r {
+                    ParserResult::Success => println!("<YASLC/Parser> Correctly parsed YASL program file."),
+                    _ => {
+                        // Get the error token
+                        if let Some(t) = self.last_token() {
+                            println!("<YASLC/Parser> Error: Unexpected token at ({}, {}) of type: {}", t.line(), t.column(), t.token_type());
+                        } else {
+                            println!("<YASC/Parser> Internal error: Could not find the error token, we don't know what went wrong.");
+                        }
+                    }
+                }
+            }
 
-            _ => {},
+            ParserState::Continue => {
+                if let Some(t) = self.last_token() {
+                    println!("<YASLC/Parser> Unexpected end of file at ({}, {}): {}", t.line(), t.column(), t.token_type());
+                } else {
+                    println!("<YASC/Parser> Unexpected end of file. No token found, we don't know what went wrong.");
+                }
+            }
         }
     }
 
+    // Pops the front token off the stack of tokens and returns it.
     fn next_token(&mut self) -> Token {
-        if self.tokens.len() == 0 {
-            panic!("Attempted to remove a token for parsing but there are none left!");
-        }
-        self.tokens.remove(0)
+        let t = self.tokens.remove(0);
+
+        self.last_token = Some(t.clone());
+
+        t
     }
 
-    fn print_error(&self, expected: Option<TokenType>, found: &Token) {
-        if let Some(e) = expected {
-            panic!("<YASLC/Parser> ({}, {}) Error: Expected token {}, found {}.",
-                found.line(), found.column(), e, found);
+    fn last_token(&mut self) -> Option<Token> {
+        self.last_token.clone()
+    }
+
+    fn insert_last_token(&mut self) {
+        if let Some(a) = self.last_token() {
+            self.tokens.insert(0, a);
+            self.last_token = None;
         } else {
-            panic!("<YASLC/Parser> ({}, {}) Error: Unexpected token.",
-                found.line(), found.column());
+            println!("<YASLC/Parser> Internal warning: Attempted to insert the last token into the parser but there is no last token!");
         }
-
     }
 
-    fn check(&mut self, t: TokenType, token: Token, expected: bool) -> ParseResult {
-        if token.is_type(t.clone()) == false {
-            if expected == true {
-                self.print_error(Some(t), &token);
-                return ParseResult::Unexpected(token);
-            } else {
-                return ParseResult::Incorrect(token);
-            }
-        }
-
-        ParseResult::Success
-    }
-
-    fn check_next(&mut self, t: TokenType, expected: bool) -> ParseResult {
+    // Checks the next token for the token type t and returns the parser state (continue or done)
+    // based on the input
+    fn check(&mut self, t: TokenType) -> ParserState {
         let token = self.next_token();
-        self.check(t, token, expected)
+
+        self.check_token(t, token)
     }
 
-    fn check_next_for(&mut self, types: Vec<TokenType>, expected: bool) -> ParseResult {
-        let mut e = expected;
-        for t in types.into_iter() {
-            match self.check_next(t, e) {
-                ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
-                ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
-                _ => {},
-            }
-            e = true;
+    fn check_token(&mut self, t: TokenType, token: Token) -> ParserState {
+        match token.is_type(t) {
+            true => ParserState::Continue,
+            false => ParserState::Done(ParserResult::Unexpected),
         }
-        ParseResult::Success
     }
 
-    // Takes a list of parse results and returns a single parse result. If it is unexpected
-    // or incorrect it will return the first unexpected or incorrect wrapped token.
-    //
-    // WARNING: If you are using a method that is combining rules for a grammar that may return
-    // empty you will throw away too many tokens. Always have one independent check from the
-    // result combination to prevent this.
-    fn combine_results(results: Vec<ParseResult>) -> ParseResult {
-        for r in results {
-            match r {
-                ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
-                ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
-                _ => {},
-            }
+    // Checks the token for the first token type t1. If it fails it checks the token for type t2.
+    // Returns success if either is the type of token.
+    fn check_and_then_check(&mut self, t1: TokenType, t2: TokenType)
+        -> (ParserState, Option<TokenType>) {
+        match self.check(t1.clone()) {
+            ParserState::Continue => (ParserState::Continue, Some(t1)),
+            ParserState::Done(_) => {
+                self.insert_last_token();
+                (self.check(t2.clone()), Some(t2))
+            },
         }
-        ParseResult::Success
     }
 
     /**
-     * Context free grammar rules
+     * YASL Context free grammar rules
      */
-    fn program(&mut self) -> ParseResult {
-        Parser::combine_results(vec![
-            self.check_next_for(vec![
-                TokenType::Keyword(KeywordType::Program),
-                TokenType::Identifier,
-                TokenType::Semicolon,
-                ], true),
-            self.block(),
-            self.check_next(TokenType::Period, true)
-        ])
+
+    /*
+     *  PROGRAM rule
+     */
+    fn program(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting PROGRAM rule.");
+        }
+
+        match self.check(TokenType::Keyword(KeywordType::Program)) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.check(TokenType::Identifier) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.check(TokenType::Semicolon) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.block() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
+
+        match self.check(TokenType::Period) {
+            ParserState::Done(ParserResult::Success) => {
+                if VERBOSE == true {
+                    println!("<YASLC/Parser> Exiting Parser because we found the final period.");
+                }
+
+                ParserState::Done(ParserResult::Success)
+            },
+            _ => ParserState::Continue,
+        }
     }
 
-    fn block(&mut self) -> ParseResult {
-        Parser::combine_results(vec![
-            self.consts(),
-            self.vars(),
-            self.procs(),
-            self.check_next(TokenType::Keyword(KeywordType::Begin), true),
-            self.statements(),
-            self.check_next(TokenType::Keyword(KeywordType::End), true),
-        ])
+    // BLOCK rule
+    fn block (&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting BLOCK rule.");
+        }
+
+        match self.consts() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
+
+        match self.vars() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
+
+        match self.procs() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
+
+        match self.check(TokenType::Keyword(KeywordType::Begin)) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.statements() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
+
+        match self.check(TokenType::Keyword(KeywordType::End)) {
+            ParserState::Continue => ParserState::Continue,
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
     }
 
-    fn consts(&mut self) -> ParseResult {
+    /*
+     *  CONSTS rule
+     */
+    fn consts(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting CONSTS rule.");
+        }
+
         match self.token_const() {
-            ParseResult::Unexpected(t) => ParseResult::Unexpected(t),
-            ParseResult::Incorrect(t) => {
-                self.tokens.insert(0, t);
-                ParseResult::Success
-            }
-            _ => self.consts(),
+            ParserState::Continue => self.consts(),
+            ParserState::Done(ParserResult::Incorrect) => {
+                self.insert_last_token();
+                ParserState::Continue
+            },
+            _ => ParserState::Done(ParserResult::Unexpected),
         }
     }
 
-    fn token_const(&mut self) -> ParseResult {
-        // Manually check first rule
-        match self.check_next(TokenType::Keyword(KeywordType::Const), false) {
-            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
-            ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
-            _ => {},
+    // CONST rule
+    fn token_const(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting CONST rule.");
+        }
+
+        match self.check(TokenType::Keyword(KeywordType::Const)) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Incorrect),
         };
 
-        self.check_next_for(vec![
-            TokenType::Identifier,
-            TokenType::Equals,
-            TokenType::Number,
-            TokenType::Semicolon
-        ], true)
+        match self.check(TokenType::Identifier) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.check(TokenType::Equals) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.check(TokenType::Number) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.check(TokenType::Semicolon) {
+            ParserState::Continue => ParserState::Continue,
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
     }
 
-    fn vars(&mut self) -> ParseResult {
+    // VARS rule
+    fn vars(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting VARS rule.");
+        }
+
         match self.var() {
-            ParseResult::Unexpected(t) => ParseResult::Unexpected(t),
-            ParseResult::Incorrect(t) => {
-                self.tokens.insert(0, t);
-                ParseResult::Success
-            }
-            _ => self.vars(),
+            ParserState::Continue => self.var(),
+            ParserState::Done(ParserResult::Incorrect) => {
+                self.insert_last_token();
+                ParserState::Continue
+            },
+            _ => ParserState::Done(ParserResult::Unexpected),
         }
     }
 
-    fn var(&mut self) -> ParseResult {
-        match self.check_next(TokenType::Keyword(KeywordType::Var), false) {
-            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
-            ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
-            _ => {},
+    // VAR rule
+    fn var(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting VAR rule.");
+        }
+
+        match self.check(TokenType::Keyword(KeywordType::Var)) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Incorrect),
         };
 
-        Parser::combine_results(vec![
-            self.check_next_for(vec![
-                TokenType::Identifier,
-                TokenType::Colon,
-            ], true),
-            self.token_type(),
-            self.check_next(TokenType::Semicolon, true)
-        ])
+        match self.check(TokenType::Identifier) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.check(TokenType::Colon) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        // self.token_type()
+
+        self.check(TokenType::Semicolon)
     }
 
-    fn token_type(&mut self) -> ParseResult {
-        let token = self.next_token();
+    // TYPE rule
+    fn token_type(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting TYPE rule.");
+        }
 
-        match self.check(TokenType::Keyword(KeywordType::Int), token.clone(), false) {
-            ParseResult::Success => return ParseResult::Success,
-            _ => {},
-        };
-
-        match self.check(TokenType::Keyword(KeywordType::Bool), token.clone(), true) {
-            ParseResult::Success => return ParseResult::Success,
-            _ => {},
-        };
-
-        ParseResult::Unexpected(token)
+        self.check_and_then_check(TokenType::Keyword(KeywordType::Int),
+            TokenType::Keyword(KeywordType::Bool)).0
     }
 
-    fn procs(&mut self) -> ParseResult {
+    // PROCS rule
+    fn procs(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting PROCS rule.");
+        }
+
         match self.token_proc() {
-            ParseResult::Unexpected(t) => ParseResult::Unexpected(t),
-            ParseResult::Incorrect(t) => {
-                self.tokens.insert(0, t);
-                ParseResult::Success
-            }
-            _ => self.procs(),
+            ParserState::Continue => self.procs(),
+            ParserState::Done(ParserResult::Incorrect) => {
+                self.insert_last_token();
+                ParserState::Continue
+            },
+            _ => {
+                ParserState::Done(ParserResult::Unexpected)
+            },
         }
     }
 
-    fn token_proc(&mut self) -> ParseResult {
-        match self.check_next(TokenType::Keyword(KeywordType::Proc), false) {
-            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
-            ParseResult::Incorrect(t) => return ParseResult::Incorrect(t),
-            _ => {},
+    // PROC rule
+    fn token_proc(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting PROC rule.");
+        }
+
+        match self.check(TokenType::Keyword(KeywordType::Proc)) {
+            ParserState::Continue => ParserState::Continue,
+            _ => return ParserState::Done(ParserResult::Incorrect),
         };
 
-        Parser::combine_results(vec![
-            self.check_next_for(vec![
-                TokenType::Identifier,
-                TokenType::Colon
-            ], true),
-            self.param_list(),
-            self.check_next(TokenType::Semicolon, true),
-            self.block(),
-            self.check_next(TokenType::Semicolon, true),
-        ])
+        match self.check(TokenType::Identifier) {
+            ParserState::Continue => ParserState::Continue,
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.param_list() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.check(TokenType::Semicolon) {
+            ParserState::Continue => ParserState::Continue,
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.block() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
+
+        match self.check(TokenType::Semicolon) {
+            ParserState::Continue => ParserState::Continue,
+            _ => ParserState::Done(ParserResult::Unexpected),
+        }
     }
 
-    fn param_list(&mut self) -> ParseResult {
-        Parser::combine_results(vec![
-            self.check_next(TokenType::LeftParen, false),
-            self.params(),
-            self.check_next(TokenType::RightParen, true),
-        ])
+    // PARAM-LIST rule
+    fn param_list(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting PARAM-LIST rule.");
+        }
+
+        match self.check(TokenType::LeftParen) {
+            ParserState::Continue => ParserState::Continue,
+            _ => {
+                self.insert_last_token();
+                return ParserState::Continue;
+            },
+        };
+
+        match self.params() {
+            ParserState::Continue => ParserState::Continue,
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.check(TokenType::RightParen) {
+            ParserState::Continue => ParserState::Continue,
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
     }
 
-    fn params(&mut self) -> ParseResult {
-        Parser::combine_results(vec![
-            self.param(),
-            self.follow_params(),
-        ])
+    // PARAMS rule
+    fn params(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting PARAMS rule.");
+        }
+
+        match self.param() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.follow_param() {
+            ParserState::Continue => ParserState::Continue,
+            ParserState::Done(ParserResult::Incorrect) => {
+                self.insert_last_token();
+                ParserState::Continue
+            }
+            _ => ParserState::Done(ParserResult::Unexpected)
+        }
     }
 
-    fn follow_params(&mut self) -> ParseResult {
-        Parser::combine_results(vec![
-            self.check_next(TokenType::Comma, false),
-            self.params(),
-        ])
+    // FOLLOW_PARAM rule
+    fn follow_param(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting FOLLOW-PARAM rule.");
+        }
+
+        match self.check(TokenType::Comma) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Incorrect),
+        };
+
+        match self.params() {
+            ParserState::Continue => ParserState::Continue,
+            ParserState::Done(a) => ParserState::Done(a),
+        }
     }
 
-    fn param(&mut self) -> ParseResult {
-        Parser::combine_results(vec![
-            self.check_next_for(vec![
-                TokenType::Identifier,
-                TokenType::Colon,
-            ], true),
-            self.token_type()
-        ])
+    // PARAM rule
+    fn param(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting PARAM rule.");
+        }
+
+        match self.check(TokenType::Identifier) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        match self.check(TokenType::Colon) {
+            ParserState::Continue => {},
+            ParserState::Done(a) => return ParserState::Done(a),
+        };
+
+        match self.token_type() {
+            ParserState::Continue => ParserState::Continue,
+            ParserState::Done(a) => ParserState::Done(a),
+        }
     }
 
-    fn statements(&mut self) -> ParseResult {
+    // STATEMENTS rule
+    fn statements(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting STATEMENTS rule.");
+        }
+
         match self.statement() {
-            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
-            _ => {},
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
         match self.statement_tail() {
-            ParseResult::Incorrect(t) => {
-                if t.is_type(TokenType::Keyword(KeywordType::End)) {
-                    self.tokens.insert(0, t);
-                    return ParseResult::Success;
-                }
-                self.print_error(None, &t);
-                ParseResult::Unexpected(t)
-            },
-            ParseResult::Unexpected(t) => {
-                return ParseResult::Unexpected(t);
-            }
-            ParseResult::Success => ParseResult::Success,
+            ParserState::Continue => ParserState::Continue,
+            _ => return ParserState::Done(ParserResult::Unexpected),
         }
     }
 
-    fn statement_tail(&mut self) -> ParseResult {
-        // Check the first one manually
-        match self.check_next(TokenType::Semicolon, false) {
-            ParseResult::Unexpected(t) => {
-                return ParseResult::Unexpected(t);
-            }
-            ParseResult::Incorrect(t) => {
-                return ParseResult::Incorrect(t);
-            }
-            _ => {},
+    // STATEMENT-TAIL rule
+    fn statement_tail(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting STATEMENT-TAIL rule.");
+        }
+
+        match self.check(TokenType::Semicolon) {
+            ParserState::Continue => {},
+            _ => {
+                self.insert_last_token();
+                return ParserState::Continue;
+            },
         };
 
         match self.statement() {
-            ParseResult::Unexpected(t) => {
-                return ParseResult::Unexpected(t);
-            }
-            _ => {},
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
         self.statement_tail()
     }
 
-    fn statement(&mut self) -> ParseResult {
+    // STATEMENT rule
+    // Statement rule is special because there are so many types of statements that we must
+    // be more explicit with definitions.
+    fn statement(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting STATEMENT rule.");
+        }
+
         let token = self.next_token();
 
-        match self.check(TokenType::Keyword(KeywordType::If), token.clone(), false) {
-            ParseResult::Success => {
-                return Parser::combine_results(vec![
-                    self.expression(),
-                    self.check_next(TokenType::Keyword(KeywordType::Then), true),
-                    self.statement(),
-                    self.follow_if(),
-                ]);
+        match self.check_token(TokenType::Keyword(KeywordType::If), token.clone()) {
+            ParserState::Continue => {
+                match self.expression() {
+                    ParserState::Continue => {},
+                    _ => return ParserState::Done(ParserResult::Unexpected),
+                };
+
+                match self.check(TokenType::Keyword(KeywordType::Then)) {
+                    ParserState::Continue => {},
+                    _ => return ParserState::Done(ParserResult::Unexpected),
+                };
+
+                match self.statement() {
+                    ParserState::Continue => {},
+                    _ => return ParserState::Done(ParserResult::Unexpected),
+                };
+
+                return self.follow_if();
             },
             _ => {},
         };
 
-        match self.check(TokenType::Keyword(KeywordType::While), token.clone(), false) {
-            ParseResult::Success => {
-                return Parser::combine_results(vec![
-                    self.expression(),
-                    self.check_next(TokenType::Keyword(KeywordType::Do), true),
-                    self.statement()
-                ])
+        match self.check_token(TokenType::Keyword(KeywordType::While), token.clone()) {
+            ParserState::Continue => {
+                match self.expression() {
+                    ParserState::Continue => {},
+                    _ => return ParserState::Done(ParserResult::Unexpected),
+                };
+
+                match self.check(TokenType::Keyword(KeywordType::Do)) {
+                    ParserState::Continue => {},
+                    _ => return ParserState::Done(ParserResult::Unexpected),
+                };
+
+                return self.statement();
             },
             _ => {},
         };
 
-        match self.check(TokenType::Keyword(KeywordType::Begin), token.clone(), false) {
-            ParseResult::Success => {
+        match self.check_token(TokenType::Keyword(KeywordType::Begin), token.clone()) {
+            ParserState::Continue => {
                 return self.follow_begin();
             },
             _ => {},
         };
 
-        match self.check(TokenType::Identifier, token.clone(), false) {
-            ParseResult::Success => {
+        match self.check_token(TokenType::Identifier, token.clone()) {
+            ParserState::Continue => {
                 return self.follow_id();
             },
             _ => {},
         };
 
-        match self.check(TokenType::Keyword(KeywordType::Prompt), token.clone(), false) {
-            ParseResult::Success => {
-                return Parser::combine_results(vec![
-                    self.check_next(TokenType::String, true),
-                    self.follow_prompt(),
-                ]);
+        match self.check_token(TokenType::Keyword(KeywordType::Prompt), token.clone()) {
+            ParserState::Continue => {
+                match self.check(TokenType::String) {
+                    ParserState::Continue => {},
+                    _ => return ParserState::Done(ParserResult::Unexpected),
+                };
+
+                return self.follow_prompt();
             },
             _ => {},
         };
 
-        match self.check(TokenType::Keyword(KeywordType::Print), token.clone(), false) {
-            ParseResult::Success => {
+        match self.check_token(TokenType::Keyword(KeywordType::Print), token.clone()) {
+            ParserState::Continue => {
                 return self.follow_print();
             },
             _ => {},
         };
 
-        ParseResult::Unexpected(token)
+        ParserState::Done(ParserResult::Unexpected)
     }
 
-    fn follow_if(&mut self) -> ParseResult {
-        match self.check_next(TokenType::Keyword(KeywordType::Else), false) {
-            ParseResult::Incorrect(t) => {
-                self.tokens.insert(0, t);
-                ParseResult::Success
-            },
-            ParseResult::Success => {
-                self.statement()
-            },
-            ParseResult::Unexpected(t) => {
-                ParseResult::Unexpected(t)
+    // FOLLOW-IF rule
+    fn follow_if(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting FOLLOW-IF rule.");
+        }
+
+        match self.check(TokenType::Keyword(KeywordType::Else)) {
+            ParserState::Continue => self.statement(),
+            _ => {
+                self.insert_last_token();
+                ParserState::Continue
             }
         }
     }
 
-    fn follow_id(&mut self) -> ParseResult {
-        match self.check_next(TokenType::Equals, false) {
-            ParseResult::Incorrect(t) => {
-                self.tokens.insert(0, t);
-            },
-            ParseResult::Success => {
+    // FOLLOW-BEGIN rule
+    fn follow_begin(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting FOLLOW-BEGIN rule.");
+        }
+
+        match self.statement() {
+            ParserState::Continue => {},
+            _ => {
+                self.insert_last_token();
+                return self.check(TokenType::Keyword(KeywordType::End));
+            }
+        };
+
+        match self.statement_tail() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        self.check(TokenType::Keyword(KeywordType::End))
+    }
+
+    // FOLLOW-ID rule
+    fn follow_id(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting FOLLOW-ID rule.");
+        }
+
+        match self.check(TokenType::Equals) {
+            ParserState::Continue => {
                 return self.expression();
             },
             _ => {},
         };
 
-        match self.check_next(TokenType::LeftParen, false) {
-            ParseResult::Incorrect(t) => {
-                self.tokens.insert(0, t);
-            },
-            ParseResult::Success => {
-                return Parser::combine_results(vec![
-                    self.expression(),
-                    self.follow_expression(),
-                    self.check_next(TokenType::RightParen, true),
-                ]);
-            },
-            _ => {},
-        }
+        self.insert_last_token();
 
-        ParseResult::Success
+        match self.check(TokenType::LeftParen) {
+            ParserState::Continue => {
+                match self.expression() {
+                    ParserState::Continue => {},
+                    _ => return ParserState::Done(ParserResult::Unexpected),
+                };
+
+                match self.follow_expression() {
+                    ParserState::Continue => {},
+                    _ => return ParserState::Done(ParserResult::Unexpected),
+                };
+
+                return self.check(TokenType::RightParen);
+            }
+
+            _ => {},
+        };
+
+        self.insert_last_token();
+
+        ParserState::Continue
     }
 
-    fn follow_expression(&mut self) -> ParseResult {
-        match self.check_next(TokenType::Comma, false) {
-            ParseResult::Incorrect(t) => {
-                self.tokens.insert(0, t);
-                return ParseResult::Success;
+    // FOLLOW-EXPRESSION rule
+    fn follow_expression(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting FOLLOW-EXPRESSION rule.");
+        }
+
+        match self.check(TokenType::Comma) {
+            ParserState::Continue => {},
+            _ => {
+                self.insert_last_token();
+                return ParserState::Continue;
             },
-            _ => {},
         };
 
         match self.expression() {
-            ParseResult::Unexpected(t) => return ParseResult::Unexpected(t),
-            _ => {},
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
-        return self.follow_expression();
+        self.follow_expression()
     }
 
-    fn follow_begin(&mut self) -> ParseResult {
-        match self.statement() {
-            ParseResult::Unexpected(t) => {
-                self.tokens.insert(0, t);
-            },
-            ParseResult::Success => {
-                match self.statement_tail() {
-                    ParseResult::Incorrect(t) => {
-                        self.tokens.insert(0, t);
-                        return ParseResult::Success;
-                    },
-                    ParseResult::Success => {
-                        return self.check_next(TokenType::Keyword(KeywordType::End), true);
-                    },
-                    _ => {},
-                };
+    // FOLLOW-PROMPT rule
+    fn follow_prompt(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting FOLLOW-PROMPT rule.");
+        }
 
-                return Parser::combine_results(vec![
-                    self.statement_tail(),
-
-                ]);
+        match self.check(TokenType::Comma) {
+            ParserState::Continue => {},
+            _ => {
+                self.insert_last_token();
+                return ParserState::Continue;
             },
-            _ => {},
         };
 
-        return self.check_next(TokenType::Keyword(KeywordType::End), true);
+        self.check(TokenType::Identifier)
     }
 
-    fn expression(&mut self) -> ParseResult {
+    // FOLLOW-PRINT
+    fn follow_print(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting FOLLOW-PRINT rule.");
+        }
+
+        match self.check(TokenType::String) {
+            ParserState::Continue => return ParserState::Continue,
+            _ => self.insert_last_token(),
+        }
+
+        self.expression()
+    }
+
+    fn expression(&mut self) -> ParserState {
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Starting EXPRESSION rule.");
+        }
+
         let mut stack = Vec::<Token>::new();
 
         while self.tokens.is_empty() == false {
             let t = self.tokens.remove(0);
-            match self.check(TokenType::Semicolon, t.clone(), false) {
-                ParseResult::Incorrect(t) => {
-                    // Push to stack
-                    stack.push(t);
-                },
-                ParseResult::Success => {
+            match self.check_token(TokenType::Semicolon, t.clone()) {
+                ParserState::Continue => {
                     let expression_stack = ExpressionStack::new_from_tokens(stack);
                     if expression_stack.is_valid() == true {
                         self.tokens.insert(0, t);
-                        return ParseResult::Success;
+                        return ParserState::Continue;
                     } else {
-                        return ParseResult::Unexpected(t);
+                        return ParserState::Done(ParserResult::Unexpected);
                     }
                 },
-                _ => {},
+
+                _ => {
+                    match self.check_token(TokenType::Keyword(KeywordType::End), t.clone()) {
+                        ParserState::Continue => {
+                            if VERBOSE == true {
+                                println!("<YASLC/Parser> Exiting EXPRESSION rule because we found END token.");
+                            }
+
+                            self.tokens.insert(0, t);
+                            return ParserState::Continue;
+                        },
+                        _ => {},
+                    };
+
+                    stack.push(t);
+                }
             };
         }
 
-        return ParseResult::Unexpected(stack.pop().unwrap());
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Exiting EXPRESSION rule because we ran out of tokens.");
+        }
+
+        ParserState::Done(ParserResult::Unexpected)
     }
 
-    fn follow_prompt(&mut self) -> ParseResult {
-        self.check_next_for(vec![
-            TokenType::Comma,
-            TokenType::Identifier,
-        ], true)
-    }
 
-    fn follow_print(&mut self) -> ParseResult {
-        match self.check_next(TokenType::String, false) {
-            ParseResult::Success => return ParseResult::Success,
-            ParseResult::Incorrect(t) => {
-                self.stack.insert(0, t);
-            },
-            _ => {},
-        };
-        self.expression()
-    }
 }
 
-enum ParseResult {
+enum ParserState {
+    // The parser should continue and has the token
+    Continue,
+
+    // The parser has finished and is returning the result
+    Done(ParserResult)
+}
+
+enum ParserResult {
     // The parser should continue parsing starting with the next token
     Success,
 
-    // The parser should retry the returned token with a different rule
-    Incorrect(Token),
+    Incorrect,
 
     // The parser reached an unexpected token, should return an error and stop
-    Unexpected(Token),
+    Unexpected,
 }
+
+/*
+ * Expression parser
+ *
+ */
 
 #[derive(PartialEq)]
 enum Expression {
