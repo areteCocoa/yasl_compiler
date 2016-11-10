@@ -102,6 +102,11 @@ impl Parser {
     fn check(&mut self, t: TokenType) -> ParserState {
         let token = self.next_token();
 
+        if VERBOSE == true {
+            println!("<YASLC/Parser> Checking if token {} is of type {}.", token, t);
+            println!("\t\t\t {} tokens left in vector.", self.tokens.len());
+        }
+
         self.check_token(t, token)
     }
 
@@ -158,14 +163,17 @@ impl Parser {
         }
 
         match self.check(TokenType::Period) {
-            ParserState::Done(ParserResult::Success) => {
+            ParserState::Continue => {
                 if VERBOSE == true {
                     println!("<YASLC/Parser> Exiting Parser because we found the final period.");
                 }
 
                 ParserState::Done(ParserResult::Success)
             },
-            _ => ParserState::Continue,
+            _ => {
+                println!("Hmm");
+                ParserState::Continue
+            },
         }
     }
 
@@ -263,12 +271,14 @@ impl Parser {
         }
 
         match self.var() {
-            ParserState::Continue => self.var(),
+            ParserState::Continue => self.vars(),
             ParserState::Done(ParserResult::Incorrect) => {
                 self.insert_last_token();
                 ParserState::Continue
             },
-            _ => ParserState::Done(ParserResult::Unexpected),
+            _ => {
+                ParserState::Done(ParserResult::Unexpected)
+            },
         }
     }
 
@@ -293,7 +303,10 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
-        // self.token_type()
+        match self.token_type() {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
 
         self.check(TokenType::Semicolon)
     }
@@ -355,7 +368,7 @@ impl Parser {
         match self.block() {
             ParserState::Continue => {},
             _ => return ParserState::Done(ParserResult::Unexpected),
-        }
+        };
 
         match self.check(TokenType::Semicolon) {
             ParserState::Continue => ParserState::Continue,

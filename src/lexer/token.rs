@@ -319,7 +319,7 @@ impl TokenBuilder {
             "mod" => Some(Mod),
             "var" => Some(Var),
             "int" => Some(Int),
-            "bool" => Some(Bool),
+            "boolean" => Some(Bool),
             "proc" => Some(Proc),
             "if" => Some(If),
             "then" => Some(Then),
@@ -416,6 +416,10 @@ impl TokenState {
                     TokenState::CommentSlashStart
                 } else if input == '{' {
                     TokenState::CommentCurly
+                } else if input == '(' {
+                    TokenState::Accept(TokenAction::Accept, TokenType::LeftParen)
+                } else if input == ')' {
+                    TokenState::Accept(TokenAction::Accept, TokenType::RightParen)
                 }
                 else {
                     let i = input as u8;
