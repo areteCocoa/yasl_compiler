@@ -3,63 +3,90 @@
 // main.rs
 //
 
+static mut VERBOSE: bool = false;
+
+macro_rules! log {
+    ($message:expr $(,$arg:expr)*) => {
+        unsafe {
+            if VERBOSE == true {
+                println!($message, $($arg,)*);
+            }
+        }
+    };
+}
+
 // include the lib.rs file
 extern crate yasl_compiler;
 
+use yasl_compiler::lexer::{LexerResult, LexerError, read_file};
+
 // Include the io lib
 use std::io;
+use std::env;
 
 fn main() {
+    // Check for an argument
+    let mut i = 0;
+    for argument in env::args() {
+        if i == 0 {
+            // Do nothing, its how to program was invoked
+        } else {
+            // Check for flags
+            if argument == "-v" {
+                unsafe {
+                    VERBOSE = true;
+                }
+            } else {
+                println!("Compiling file \"{}\"", argument);
+            }
+        }
 
-    // Create a new lexer (Scanner)
-    //let mut scanner = yasl_compiler::lexer::scanner::Scanner::new();
-
-    // Create a new parser
-    // let mut parser = yasl_compiler::parser::Parser::new();
-    //
-    // loop {
-    //     scanner.read();
-    //
-    //     let new_tokens = scanner.new_tokens.clone();
-    //     // for t in new_tokens.iter() {
-    //     //     println!("{}", t);
-    //     // }
-    //
-    //     parser.parse_line(new_tokens);
-    // }
-
-    // Prompt the user for the input
-    println!("Please input the name of the YASL file: ");
-
-    // File name from standard input
-    let mut input = String::new();
-    match io::stdin().read_line(&mut input) {
-        Ok(_) => {},
-        Err(e) => {
-            panic!("Error reading from stdin: {}", e);
-        },
+        log!("Argument {}: {}", i, argument);
+        i += 1;
     }
 
-    // Get rid of the return character from the end of the string
-    // if it is a newline character
-    if let Some(last) = input.pop() {
+    let mut file_name = match env::args().nth(i) {
+        Some(f) => f,
+        None => {
+            // Prompt the user for the input
+            println!("Please input the name of the YASL file: ");
+
+            // File name from standard input
+            let mut input = String::new();
+
+            match io::stdin().read_line(&mut input) {
+                Ok(_) => {},
+                Err(e) => {
+                    println!("<YASLC> Error reading from stdin: {}", e);
+                    return;
+                },
+            };
+
+            input
+        }
+    };
+
+
+    //
+    // // Get rid of the return character from the end of the string
+    // // if it is a newline character
+    if let Some(last) = file_name.pop() {
         if last != '\n' {
-            input.push(last);
+            file_name.push(last);
         }
     }
 
-    let scanner = yasl_compiler::lexer::scanner::Scanner::new_from_file(input);
-    let tokens = match scanner.read_file() {
-        Ok(tokens) => {
-            tokens
-        }
-        Err(e) => {
-            println!("Did not successfully read file because {}.\nAttempting to find the error...", e);
+    let tokens = match read_file(file_name) {
+        LexerResult::Ok(t) => t,
+        LexerResult::Err(e) => {
+            println!("<YASLC/Lexer> Error reading file. Attempting to find the error...");
             let os_error = std::io::Error::last_os_error();
             println!("This is the last OS error we could find: {}", os_error);
             return;
-        },
+        }
     };
+
+    log!("<YASLC> Successful lexical analysis of file. Parsing.");
 
     let mut parser = yasl_compiler::parser::Parser::new_with_tokens(tokens);
     parser.parse();

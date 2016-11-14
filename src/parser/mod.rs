@@ -5,7 +5,7 @@
 
 pub mod symbol;
 
-use super::lexer::token::{Token, TokenType, KeywordType};
+use super::lexer::{Token, TokenType, KeywordType};
 
 use std::cmp::Ordering;
 
