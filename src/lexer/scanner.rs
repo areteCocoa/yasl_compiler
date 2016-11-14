@@ -35,31 +35,15 @@ pub struct Scanner {
 }
 
 impl Scanner {
-
-    // pub fn new() -> Scanner {
-    //     // Set a dummy file
-    //
-    //     // Set the line number and column number
-    //     let line_number = 1;
-    //     let column_number = 1;
-    //     let token_builder = TokenBuilder::new(column_number, line_number);
-    //
-    //     Scanner {
-    //         file: None,
-    //         token_builder: token_builder,
-    //         line_number: line_number,
-    //         column_number: column_number,
-    //         tokens: Vec::<Token>::new(),
-    //         new_tokens: Vec::<Token>::new(),
-    //     }
-    // }
-
     // Creates a new scanner from the file_string and returns it
-    pub fn new_from_file(file_string: String) -> Scanner {
+    pub fn new_from_file(file_string: String) -> Option<Scanner> {
         // Open the file so we can set it as a property
         let file = match File::open(file_string.clone()) {
             Ok(f) => f,
-            Err(e) => panic!("Error opening file \"{}\": {}", file_string, e),
+            Err(e) => {
+                println!("Error opening file \"{}\": {}", file_string, e);
+                return None;
+            },
         };
 
         // Set the line number and column number
@@ -67,14 +51,14 @@ impl Scanner {
         let column_number = 0;
         let token_builder = TokenBuilder::new(column_number, line_number);
 
-        Scanner {
+        Some(Scanner {
             file: file,
             token_builder: token_builder,
             line_number: line_number,
             column_number: column_number,
             tokens: Vec::<Token>::new(),
             new_tokens: Vec::<Token>::new(),
-        }
+        })
     }
 
     // Reads the file for this scanner and returns Ok(tokens) where tokens
@@ -91,7 +75,7 @@ impl Scanner {
             },
             Err(e) => {
                 // println!(, e);
-                return Err(format!("Error reading file to string: {}", e));
+                return Err(format!("{}", e));
             }
         };
 
@@ -108,7 +92,7 @@ impl Scanner {
         let mut input = String::new();
         match io::stdin().read_line(&mut input) {
             Ok(_) => self.handle_line(input.clone()),
-            Err(e) => println!("Error reading from stdin: {}", e),
+            Err(e) => println!("{}", e),
         }
     }
 
