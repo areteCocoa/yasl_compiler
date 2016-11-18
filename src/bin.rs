@@ -27,6 +27,7 @@ use std::env;
 fn main() {
     // Check for an argument
     let mut i = 0;
+    let mut maybe_file: Option<String> = None;
     for argument in env::args() {
         if i == 0 {
             // Do nothing, its how to program was invoked
@@ -37,15 +38,17 @@ fn main() {
                     VERBOSE = true;
                 }
             } else {
-                println!("Compiling file \"{}\"", argument);
+                log!("Compiling file \"{}\"", argument);
+                maybe_file = Some(argument.clone());
             }
         }
 
         log!("Argument {}: {}", i, argument);
+
         i += 1;
     }
 
-    let mut file_name = match env::args().nth(i) {
+    let mut file_name = match maybe_file {
         Some(f) => f,
         None => {
             // Prompt the user for the input

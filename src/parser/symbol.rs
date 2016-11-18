@@ -2,6 +2,11 @@
 /// The symbol module is responsible for maintaining a symbol tree
 ///
 
+///
+/// SymbolTable is a data structure responsible for managing symbols
+/// and pushing and popping scopes, as well as refusing symbols
+/// if they overlap in the current scope.
+///
 #[derive(Clone)]
 pub struct SymbolTable {
     symbols: Vec<Symbol>,
@@ -10,7 +15,7 @@ pub struct SymbolTable {
 }
 
 impl SymbolTable {
-    // Returns a new empty symbol table
+    /// Returns a new empty symbol table
     pub fn empty() -> SymbolTable {
         SymbolTable {
             symbols: Vec::<Symbol>::new(),
@@ -18,6 +23,7 @@ impl SymbolTable {
         }
     }
 
+    /// Consumes self to make it the child of the next scope
     fn child_table(self) -> SymbolTable {
         let pointer_old = Box::<SymbolTable>::new(self);
 
@@ -27,7 +33,7 @@ impl SymbolTable {
         }
     }
 
-    // Adds a symbol given the identifer and type
+    /// Adds a symbol given the identifer and type
     pub fn add(&mut self, identifier: String, t: SymbolType) {
         for s in self.symbols.iter() {
             if s.identifier == identifier {
@@ -41,12 +47,14 @@ impl SymbolTable {
         });
     }
 
-    // Adds (binds) a new symbol to the table
+    /// Adds (binds) a new symbol to the table
     fn add_symbol(&mut self, s: Symbol) {
         self.symbols.insert(0, s);
+        println!("<YASLC/SymbolTable> Added new symbol to table, printing...");
+        self.print_table();
     }
 
-    // Get (lookup) a symbol on the table
+    /// Get (lookup) a symbol on the table
     pub fn get(&self, name: &str) -> Option<&Symbol> {
         for s in self.symbols.iter() {
             if s.identifier == name {
@@ -62,12 +70,12 @@ impl SymbolTable {
         None
     }
 
-    // Enters the next table
+    /// Enters the next table
     pub fn enter(self) -> SymbolTable {
         self.child_table()
     }
 
-    // Exits the current table, returning the previous
+    /// Exits the current table, returning the previous
     pub fn exit(self) -> Option<SymbolTable> {
         println!("Table attempting to exit and dereference itself. Printing table.");
         self.print_table();

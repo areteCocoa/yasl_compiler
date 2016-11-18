@@ -11,9 +11,10 @@ use std::cmp::Ordering;
 
 use std::fmt;
 
+#[allow(unused_imports)]
 use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
 
-const VERBOSE: bool = false;
+const VERBOSE: bool = true;
 
 #[allow(dead_code)]
 
@@ -24,8 +25,10 @@ pub struct Parser {
     // The last popped token
     last_token: Option<Token>,
 
+    /// The symbol table associated with this parser
     symbol_table: SymbolTable,
 
+    /// The stack of tokens used with the expression parser
     stack: Vec<Token>,
 }
 
@@ -86,10 +89,12 @@ impl Parser {
         t
     }
 
+    /// Returns a copy of the last token popped
     fn last_token(&mut self) -> Option<Token> {
         self.last_token.clone()
     }
 
+    /// Inserts the last token into the token set
     fn insert_last_token(&mut self) {
         if let Some(a) = self.last_token() {
             self.tokens.insert(0, a);
@@ -883,7 +888,6 @@ impl Expression {
             | TokenType::Keyword(KeywordType::Mod) | TokenType::GreaterThan | TokenType::LessThan
             | TokenType::GreaterThanOrEqual | TokenType::LessThanOrEqual | TokenType::EqualTo
             | TokenType::NotEqualTo => Some(Expression::Operator(t.token_type())),
-
 
 
             TokenType::Keyword(KeywordType::Print) => Some(Expression::Operator(t.token_type())),
