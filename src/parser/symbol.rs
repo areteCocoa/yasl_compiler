@@ -24,6 +24,10 @@ pub struct SymbolTable {
     symbols: Vec<Symbol>,
 
     old_table: Option<Box<SymbolTable>>,
+
+    next_offset: u32,
+
+    next_temp: u32,
 }
 
 impl SymbolTable {
@@ -32,6 +36,8 @@ impl SymbolTable {
         SymbolTable {
             symbols: Vec::<Symbol>::new(),
             old_table: None,
+            next_offset: 0,
+            next_temp: 0,
         }
     }
 
@@ -44,6 +50,8 @@ impl SymbolTable {
         SymbolTable {
             symbols: Vec::<Symbol>::new(),
             old_table: Some(pointer_old),
+            next_offset: 0,
+            next_temp: 0,
         }
     }
 
@@ -55,10 +63,15 @@ impl SymbolTable {
             }
         }
 
+        let o = self.next_offset.clone();
         self.add_symbol(Symbol{
             identifier: identifier,
             symbol_type: t,
+            register: 0,
+            offset: o,
         });
+
+        self.next_offset += 4;
     }
 
     /// Adds (binds) a new symbol to the table
@@ -100,6 +113,21 @@ impl SymbolTable {
         }
     }
 
+    pub fn temp(&mut self) -> Symbol {
+        let name = format!("${}", self.next_temp);
+
+        let s = Symbol {
+            identifier: name,
+            symbol_type: SymbolType::Variable(SymbolValueType::Int),
+            offset: self.next_offset,
+            register: 0,
+        };
+
+        self.next_temp += 1;
+
+        s
+    }
+
     fn print_table(&self) {
         if let Some(ref b) = self.old_table {
             b.print_table();
@@ -121,6 +149,30 @@ impl SymbolTable {
 pub struct Symbol {
     identifier: String,
     pub symbol_type: SymbolType,
+    offset: u32,
+    register: u32,
+}
+
+impl Symbol {
+    pub fn identifier(&self) -> &String {
+        &self.identifier
+    }
+
+    pub fn symbol_type(&self) -> &SymbolType {
+        &self.symbol_type
+    }
+
+    pub fn offset(&self) -> u32 {
+        self.offset.clone()
+    }
+
+    pub fn register(&self) -> u32 {
+        self.register.clone()
+    }
+
+    pub fn set_register(&mut self, register: u32) {
+        self.register = register;
+    }
 }
 
 #[derive(Clone)]

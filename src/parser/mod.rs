@@ -811,49 +811,37 @@ impl Parser {
             _ => self.insert_last_token(),
         }
 
+        log!("<YASLC/Parser> Adding print statement waiting for expression.");
         self.expression()
     }
 
     fn expression(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting EXPRESSION rule.");
 
+        self.add_command("movw SP R1");
+
         let mut stack = Vec::<Token>::new();
 
         while self.tokens.is_empty() == false {
             let t = self.tokens.remove(0);
             match self.check_token(TokenType::Semicolon, t.clone()) {
+                // If it is a semicolon next token
                 ParserState::Continue => {
+                    log!("<YASLC/Parser> Exiting EXPRESSION rule because we found the SEMI token.");
+
                     let expression_stack = ExpressionStack::new_from_tokens(stack, self.symbol_table.clone());
-                    if expression_stack.is_valid() == true {
-                        self.tokens.insert(0, t);
-                        log!("<YASLC/Parser> Successfully exiting EXPRESSION rule because the expression stack is valid.");
-                        for t in expression_stack.left_over {
-                            self.tokens.insert(0, t);
-                        }
-                        return ParserState::Continue;
-                    } else {
-                        log!("<YASLC/Parser> Exiting EXPRESSION rule because the expression stack is invalid!");
-                        return ParserState::Done(ParserResult::Unexpected);
-                    }
+                    return self.parse_expression_stack(expression_stack, t);
                 },
 
+                // If it is not a semicolon
                 _ => {
+                    // if it is end
                     match self.check_token(TokenType::Keyword(KeywordType::End), t.clone()) {
                         ParserState::Continue => {
                             log!("<YASLC/Parser> Exiting EXPRESSION rule because we found END token.");
 
                             let expression_stack = ExpressionStack::new_from_tokens(stack, self.symbol_table.clone());
-                            if expression_stack.is_valid() == true {
-                                self.tokens.insert(0, t);
-                                log!("<YASLC/Parser> Successfully exiting EXPRESSION rule because the expression stack is valid.");
-                                for t in expression_stack.left_over {
-                                    self.tokens.insert(0, t);
-                                }
-                                return ParserState::Continue;
-                            } else {
-                                log!("<YASLC/Parser> Exiting EXPRESSION rule because the expression stack is invalid!");
-                                return ParserState::Done(ParserResult::Unexpected);
-                            }
+                            return self.parse_expression_stack(expression_stack, t);
                         },
                         _ => {},
                     };
@@ -866,6 +854,30 @@ impl Parser {
         log!("<YASLC/Parser> Exiting EXPRESSION rule because unexpectedly we ran out of tokens.");
 
         ParserState::Done(ParserResult::Unexpected)
+    }
+
+    fn parse_expression_stack(&mut self, expression_stack: ExpressionStack, t: Token) -> ParserState {
+        if expression_stack.is_valid() == true {
+            self.tokens.insert(0, t);
+            log!("<YASLC/Parser> Successfully exiting EXPRESSION rule because the expression stack is valid.");
+            for t in expression_stack.left_over {
+                self.tokens.insert(0, t);
+            }
+
+            if expression_stack..commands.len() == 0 {
+
+            } else {
+                for c in expression_stack.commands {
+                    self.add_command(&*c);
+                }
+            }
+
+
+            return ParserState::Continue;
+        } else {
+            log!("<YASLC/Parser> Exiting EXPRESSION rule because the expression stack is invalid!");
+            return ParserState::Done(ParserResult::Unexpected);
+        }
     }
 
 
@@ -901,7 +913,7 @@ enum Expression {
     Operator(TokenType),
 
     // 2, 5, 7.5, etc
-    // The string is stored to have the value of the operand
+    // The string is stored to have the value of the operand or its name
     Operand(String)
 }
 
@@ -1044,12 +1056,22 @@ impl fmt::Display for Expression {
     }
 }
 
+// ExpressionParser validates the syntax of an expression as well as reduces it and
+// manages memory allocation for temporary variables used for arithmatic
+struct ExpressionParser {
+
+}
+
 // ExpressionStack is responsible for push expressions to the stack as well as
 // managing operator precedence for expressions
 struct ExpressionStack {
     expressions: Vec<Expression>,
 
+    post_fix: Vec<Expression>,
+
     table: SymbolTable,
+
+    commands: Vec<String>,
 
     left_over: Vec<Token>
 }
@@ -1058,8 +1080,10 @@ impl ExpressionStack {
     fn new(table: SymbolTable) -> ExpressionStack {
         ExpressionStack {
             expressions: Vec::<Expression>::new(),
+            post_fix: Vec::<Expression>::new(),
             table: table,
-            left_over: Vec::<Token>::new()
+            left_over: Vec::<Token>::new(),
+            commands: Vec::<String>::new()
         }
     }
 
@@ -1079,6 +1103,9 @@ impl ExpressionStack {
             }
         }
 
+        while e_stack.post_fix.len() > 0 {
+            e_stack.reduce();
+        }
         // while let Some(e) = e_stack.expressions.pop() {
         //     //println!("{}", e);
         // }
@@ -1087,6 +1114,7 @@ impl ExpressionStack {
     }
 
     fn push_expression(&mut self, e: Expression) {
+        // Match the expression to try and determine the value
         match e.clone() {
             Expression::Operand(o) => {
                 log!("<YASLC/ExpParser> Attempting to determine the value of operand...");
@@ -1122,26 +1150,27 @@ impl ExpressionStack {
             },
         }
 
-        match e {
-            Expression::Operand(_) => {},
+        match e.clone() {
+            Expression::Operand(_) => {
+                self.post_fix.push(e);
+            },
             Expression::Operator(_) => {
                 // if the stack is empty, just push it
                 if self.expressions.len() <= 0 {
+                    log!("<YASLC/ExpParser> Pushing expression {} onto expression stack.", e);
                     self.expressions.push(e);
                 } // if the item is an operator (this will need to be changed with the addition of parenthesis)
                 else {
                     // if the item on the top of the stack is lower priority
                     if e >= self.expressions[self.expressions.len() - 1] {
+                        log!("<YASLC/ExpParser> Pushing expression {} onto expression stack.", e);
                         self.expressions.push(e);
                     } else {
                         // Pop items off the stack, write to output, until we get to one with lower
                         // priority (or the stack empties), then push item to stack
                         while e <= self.expressions[self.expressions.len() - 1] && self.expressions.len() > 1 {
-                            if let Some(_) = self.expressions.pop() {
-                                //println!("{}", x);
-                            } else {
-                                break;
-                            }
+                            self.post_fix.push(e.clone());
+
                         }
                         self.expressions.push(e);
                     }
@@ -1152,5 +1181,62 @@ impl ExpressionStack {
 
     fn is_valid(&self) -> bool {
         true
+    }
+
+    fn reduce(&mut self) {
+        for e in self.post_fix.clone() {
+            print!(" {} ", e);
+        }
+        println!("");
+
+        let ex = self.post_fix.remove(0);
+        log!("<YASLC/ExpParser> Reducing expression stack.");
+        // REDUCTION
+        match ex {
+            Expression::Operator(t) => {
+                let command = match t {
+                    TokenType::Plus => "addw",
+                    TokenType::Minus => "subw",
+                    TokenType::Star => "mulw",
+                    TokenType::Keyword(KeywordType::Div) => "divw",
+                    _ => {
+                        log!("<YASLC/ExpParser> Internal Warning: Unrecognized operator, ignoring.");
+                        ""
+                    }
+                };
+
+                // Pop the next two
+                let first = match self.post_fix.pop() {
+                    Some(Expression::Operand(l)) => l,
+                    _ => panic!("Interal error with stack! Expected an operand but found an operator!"),
+                };
+                let second = match self.post_fix.pop() {
+                    Some(Expression::Operand(l)) => l,
+                    _ => panic!("Interal error with stack! Expected an operand but found an operator!"),
+                };
+
+                let s1 = match self.table.get(&*first) {
+                    Some(x) => x,
+                    None => panic!("Internal error with symbol table! Could not find value for symbol being used."),
+                }.clone();
+                let s2 = match self.table.get(&*second) {
+                    Some(x) => x,
+                    None => panic!("Internal error with symbol table! Could not find value for symbol being used."),
+                }.clone();
+
+                let mut temp = self.table.temp();
+                temp.set_register(1);
+
+                let final_command = format!("{} +{}R{} +{}@R{}", command, s1.offset(), s1.register(), s2.offset(), s2.register());
+                self.commands.push(final_command);
+            },
+            Expression::Operand(_) => {
+                if self.post_fix.len() == 0 {
+                    println!("<YASLC/ExpParser> Finished reducing, we only have one thing left now.");
+                } else {
+                    println!("<YASLC/ExpParser> Internal Warning: Encountered an Operand where we though we should not!");
+                }
+            }
+        };
     }
 }
