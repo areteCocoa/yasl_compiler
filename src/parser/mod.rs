@@ -4,6 +4,7 @@
 ///
 
 pub mod symbol;
+mod file_generator;
 
 use super::lexer::{Token, TokenType, KeywordType};
 
@@ -30,6 +31,7 @@ macro_rules! log {
 
 /// The Parser struct can check syntax for a set of tokens for validity.
 pub struct Parser {
+    // The set of tokens
     tokens: Vec<Token>,
 
     // The last popped token
@@ -40,6 +42,9 @@ pub struct Parser {
 
     /// The stack of tokens used with the expression parser
     stack: Vec<Token>,
+
+    // The vector of strings for output to the file
+    out: Vec<String>,
 }
 
 /*
@@ -58,6 +63,8 @@ impl Parser {
             symbol_table: SymbolTable::empty(),
 
             stack: Vec::<Token>::new(),
+
+            out: Vec::<String>::new(),
         }
     }
 
@@ -68,7 +75,13 @@ impl Parser {
         match self.program() {
             ParserState::Done(r) => {
                 match r {
-                    ParserResult::Success => println!("<YASLC/Parser> Correctly parsed YASL program file."),
+                    ParserResult::Success => {
+                        println!("<YASLC/Parser> Correctly parsed YASL program file.");
+                        log!("<YASLC/Parser> Printing file output: ");
+                        for o in self.out.clone() {
+                            println!("{}", o);
+                        }
+                    },
                     _ => {
                         // Get the error token
                         if let Some(t) = self.last_token() {
@@ -143,6 +156,11 @@ impl Parser {
                 (self.check(t2.clone()), Some(t2))
             },
         }
+    }
+
+    fn add_command(&mut self, command: String) {
+        log!("<YASLC/Parser> Adding command to list of output: \'{}\'", command);
+        self.out.push(command);
     }
 
     /**
