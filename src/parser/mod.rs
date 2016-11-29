@@ -28,6 +28,58 @@ macro_rules! log {
     };
 }
 
+macro_rules! c_token {
+    // Checks and returns unexpected if it was unexpected
+    ($_self:expr, $t:expr) => {
+        match $_self.check($t) {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
+    };
+
+    // Checks and calls fail if it is unexpected
+    ($_self:expr, $t:expr, $fail:expr) => {
+        match $_self.check($t) {
+            ParserState::Continue => {},
+            _ => $fail,
+        }
+    };
+
+    // Checks and calls success if a success and fail if it fails
+    ($_self:expr, $t:expr, $fail:expr, $success:expr) => {
+        match $_self.check($t) {
+            ParserState::Continue  => $success,
+            _ => $fail,
+        }
+    };
+}
+
+macro_rules! c_exp {
+    // Checks and returns unexpected if it was unexpected
+    ($e:expr) => {
+        match $e {
+            ParserState::Continue => {},
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        }
+    };
+
+    // Checks and calls fail if it is unexpected
+    ($e:expr, $fail:expr) => {
+        match $e {
+            ParserState::Continue => {},
+            _ => $fail,
+        }
+    };
+
+    // Checks and calls success if a success and fail if it fails
+    ($e:expr, $fail:expr, $success:expr) => {
+        match $e {
+            ParserState::Continue  => $success,
+            _ => $fail,
+        }
+    };
+}
+
 #[allow(dead_code)]
 
 /// The Parser struct can check syntax for a set of tokens for validity.
@@ -211,78 +263,36 @@ impl Parser {
     fn program(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting PROGRAM rule.");
 
-        match self.check(TokenType::Keyword(KeywordType::Program)) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_token!(self, TokenType::Keyword(KeywordType::Program));
+        c_token!(self, TokenType::Identifier);
+        c_token!(self, TokenType::Semicolon);
 
-        match self.check(TokenType::Identifier) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
-
-        match self.check(TokenType::Semicolon) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
-
-        // To the first block
+        // Mark the main block in the output file
         self.add_command("$main");
 
-        match self.block() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        }
+        c_exp!(self.block());
 
-        match self.check(TokenType::Period) {
-            ParserState::Continue => {
-                log!("<YASLC/Parser> Exiting Parser because we found the final period.");
-
-                self.add_command("end");
-
-                ParserState::Done(ParserResult::Success)
-            },
-            _ => {
-                ParserState::Continue
-            },
-        }
+        c_token!(self, TokenType::Period, ParserState::Continue, {
+            log!("<YASLC/Parser> Exiting Parser because we found the final period.");
+            self.add_command("end");
+            ParserState::Done(ParserResult::Success)
+        })
     }
 
     // BLOCK rule
     fn block (&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting BLOCK rule.");
 
-        match self.consts() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        }
+        c_exp!(self.consts());
+        c_exp!(self.vars());
+        c_exp!(self.procs());
 
-        match self.vars() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        }
+        c_token!(self, TokenType::Keyword(KeywordType::Begin));
 
-        match self.procs() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        }
-
-        match self.check(TokenType::Keyword(KeywordType::Begin)) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
-
-        match self.statements() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
-
-        let result = match self.check(TokenType::Keyword(KeywordType::End)) {
-            ParserState::Continue => ParserState::Continue,
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
-
-        result
+        c_exp!(self.statements());
+        c_token!(self, TokenType::Keyword(KeywordType::End),
+            ParserState::Done(ParserResult::Unexpected),
+            ParserState::Continue)
     }
 
     /*
@@ -305,10 +315,8 @@ impl Parser {
     fn token_const(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting CONST rule.");
 
-        match self.check(TokenType::Keyword(KeywordType::Const)) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Incorrect),
-        };
+        c_token!(self, TokenType::Keyword(KeywordType::Const),
+            return ParserState::Done(ParserResult::Incorrect));
 
         let id = match self.check(TokenType::Identifier) {
             ParserState::Continue => {
@@ -317,10 +325,7 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
-        match self.check(TokenType::Assign) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_token!(self, TokenType::Assign);
 
         // TODO: Implement detecting value type based on lexeme
         // let (t, _) = match self.check(TokenType::Number) {
@@ -357,18 +362,14 @@ impl Parser {
         //
         // };
 
-        match self.check(TokenType::Number) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_token!(self, TokenType::Number);
 
-        self.symbol_table.add(id.clone(), SymbolType::Constant(SymbolValueType::Bool));
+        self.symbol_table.add(id.clone(), SymbolType::Constant(SymbolValueType::Int));
         self.add_declaration(&*id, 4);
 
-        match self.check(TokenType::Semicolon) {
-            ParserState::Continue => ParserState::Continue,
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        }
+        c_token!(self, TokenType::Semicolon,
+            ParserState::Done(ParserResult::Unexpected),
+            ParserState::Continue)
     }
 
     // VARS rule
@@ -391,20 +392,14 @@ impl Parser {
     fn var(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting VAR rule.");
 
-        match self.check(TokenType::Keyword(KeywordType::Var)) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Incorrect),
-        };
+        c_token!(self, TokenType::Keyword(KeywordType::Var), return ParserState::Done(ParserResult::Incorrect));
 
         let id = match self.check(TokenType::Identifier) {
             ParserState::Continue => {self.last_token().unwrap().lexeme()},
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
-        match self.check(TokenType::Colon) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_token!(self, TokenType::Colon);
 
         let t = match self.token_type() {
             ParserState::Continue => {
@@ -471,20 +466,11 @@ impl Parser {
 
         self.symbol_table.add(id, SymbolType::Procedure);
 
-        match self.param_list() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_exp!(self.param_list());
 
-        match self.check(TokenType::Semicolon) {
-            ParserState::Continue => ParserState::Continue,
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_token!(self, TokenType::Semicolon);
 
-        match self.block() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_exp!(self.block());
 
         let r = match self.check(TokenType::Semicolon) {
             ParserState::Continue => ParserState::Continue,
@@ -494,7 +480,7 @@ impl Parser {
         self.symbol_table = match self.symbol_table.clone().exit(){
             Some(s) => s,
             None => {
-                panic!("A symbol table has been popped where it shouldn't have been and we're in big trouble.");
+                panic!("<YASLC/Parser> A symbol table has been popped where it shouldn't have been and we're in big trouble.");
             }
         };
 
@@ -513,25 +499,18 @@ impl Parser {
             },
         };
 
-        match self.params() {
-            ParserState::Continue => ParserState::Continue,
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_exp!(self.params());
 
-        match self.check(TokenType::RightParen) {
-            ParserState::Continue => ParserState::Continue,
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        }
+        c_token!(self, TokenType::RightParen,
+            ParserState::Done(ParserResult::Unexpected),
+            ParserState::Continue)
     }
 
     // PARAMS rule
     fn params(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting PARAMS rule.");
 
-        match self.param() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_exp!(self.param());
 
         match self.follow_param() {
             ParserState::Continue => ParserState::Continue,
@@ -562,20 +541,12 @@ impl Parser {
     fn param(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting PARAM rule.");
 
-        match self.check(TokenType::Identifier) {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_token!(self, TokenType::Identifier);
 
-        match self.check(TokenType::Colon) {
-            ParserState::Continue => {},
-            ParserState::Done(a) => return ParserState::Done(a),
-        };
+        c_token!(self, TokenType::Colon);
 
-        match self.token_type() {
-            ParserState::Continue => ParserState::Continue,
-            ParserState::Done(a) => ParserState::Done(a),
-        }
+        c_exp!(self.token_type(), ParserState::Done(ParserResult::Unexpected),
+            ParserState::Continue)
     }
 
     // STATEMENTS rule
@@ -605,10 +576,7 @@ impl Parser {
             },
         };
 
-        match self.statement() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_exp!(self.statement());
 
         self.statement_tail()
     }
@@ -751,10 +719,7 @@ impl Parser {
             }
         };
 
-        match self.statement_tail() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_exp!(self.statement_tail());
 
         self.check(TokenType::Keyword(KeywordType::End))
     }
@@ -807,10 +772,7 @@ impl Parser {
             },
         };
 
-        match self.expression() {
-            ParserState::Continue => {},
-            _ => return ParserState::Done(ParserResult::Unexpected),
-        };
+        c_exp!(self.expression());
 
         self.follow_expression()
     }
