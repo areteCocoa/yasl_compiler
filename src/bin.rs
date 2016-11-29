@@ -3,7 +3,7 @@
 // main.rs
 //
 
-static mut VERBOSE: bool = false;
+static mut VERBOSE: bool = true;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {

@@ -2,6 +2,18 @@
 /// The symbol module is responsible for maintaining a symbol tree
 ///
 
+static mut VERBOSE: bool = false;
+
+macro_rules! log {
+    ($message:expr $(,$arg:expr)*) => {
+        unsafe {
+            if VERBOSE == true {
+                println!($message, $($arg,)*);
+            }
+        }
+    };
+}
+
 ///
 /// SymbolTable is a data structure responsible for managing symbols
 /// and pushing and popping scopes, as well as refusing symbols
@@ -25,6 +37,8 @@ impl SymbolTable {
 
     /// Consumes self to make it the child of the next scope
     fn child_table(self) -> SymbolTable {
+        log!("<YASLC/SymbolTable> Creating child symbol table for table to create new scope.");
+
         let pointer_old = Box::<SymbolTable>::new(self);
 
         SymbolTable {
@@ -50,7 +64,7 @@ impl SymbolTable {
     /// Adds (binds) a new symbol to the table
     fn add_symbol(&mut self, s: Symbol) {
         self.symbols.insert(0, s);
-        println!("<YASLC/SymbolTable> Added new symbol to table, printing...");
+        log!("<YASLC/SymbolTable> Added new symbol to table, printing...");
         self.print_table();
     }
 
@@ -77,7 +91,7 @@ impl SymbolTable {
 
     /// Exits the current table, returning the previous
     pub fn exit(self) -> Option<SymbolTable> {
-        println!("Table attempting to exit and dereference itself. Printing table.");
+        log!("Table attempting to exit and dereference itself. Printing table.");
         self.print_table();
 
         match self.old_table {
@@ -91,13 +105,13 @@ impl SymbolTable {
             b.print_table();
         }
 
-        println!("Table:");
+        print!("Table: [");
 
         for s in self.symbols.iter() {
-            println!("{}", s.identifier);
+            print!("{}", s.identifier);
         }
 
-
+        println!("]");
     }
 }
 

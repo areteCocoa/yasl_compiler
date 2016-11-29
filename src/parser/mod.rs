@@ -14,7 +14,17 @@ use std::fmt;
 #[allow(unused_imports)]
 use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
 
-const VERBOSE: bool = true;
+static mut VERBOSE: bool = true;
+
+macro_rules! log {
+    ($message:expr $(,$arg:expr)*) => {
+        unsafe {
+            if VERBOSE == true {
+                println!($message, $($arg,)*);
+            }
+        }
+    };
+}
 
 #[allow(dead_code)]
 
@@ -109,10 +119,8 @@ impl Parser {
     fn check(&mut self, t: TokenType) -> ParserState {
         let token = self.next_token();
 
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Checking if token {} is of type {}.", token, t);
-            println!("\t\t\t {} tokens left in vector.", self.tokens.len());
-        }
+        log!("<YASLC/Parser> Checking if token {} is of type {}.", token, t);
+        log!("\t\t\t {} tokens left in vector.", self.tokens.len());
 
         self.check_token(t, token)
     }
@@ -145,9 +153,7 @@ impl Parser {
      *  PROGRAM rule
      */
     fn program(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting PROGRAM rule.");
-        }
+        log!("<YASLC/Parser> Starting PROGRAM rule.");
 
         match self.check(TokenType::Keyword(KeywordType::Program)) {
             ParserState::Continue => {},
@@ -171,14 +177,11 @@ impl Parser {
 
         match self.check(TokenType::Period) {
             ParserState::Continue => {
-                if VERBOSE == true {
-                    println!("<YASLC/Parser> Exiting Parser because we found the final period.");
-                }
+                log!("<YASLC/Parser> Exiting Parser because we found the final period.");
 
                 ParserState::Done(ParserResult::Success)
             },
             _ => {
-                println!("Hmm");
                 ParserState::Continue
             },
         }
@@ -186,9 +189,7 @@ impl Parser {
 
     // BLOCK rule
     fn block (&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting BLOCK rule.");
-        }
+        log!("<YASLC/Parser> Starting BLOCK rule.");
 
         match self.consts() {
             ParserState::Continue => {},
@@ -227,9 +228,7 @@ impl Parser {
      *  CONSTS rule
      */
     fn consts(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting CONSTS rule.");
-        }
+        log!("<YASLC/Parser> Starting CONSTS rule.");
 
         match self.token_const() {
             ParserState::Continue => self.consts(),
@@ -243,9 +242,7 @@ impl Parser {
 
     // CONST rule
     fn token_const(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting CONST rule.");
-        }
+        log!("<YASLC/Parser> Starting CONST rule.");
 
         match self.check(TokenType::Keyword(KeywordType::Const)) {
             ParserState::Continue => {},
@@ -314,9 +311,7 @@ impl Parser {
 
     // VARS rule
     fn vars(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting VARS rule.");
-        }
+        log!("<YASLC/Parser> Starting VARS rule.");
 
         match self.var() {
             ParserState::Continue => self.vars(),
@@ -332,9 +327,7 @@ impl Parser {
 
     // VAR rule
     fn var(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting VAR rule.");
-        }
+        log!("<YASLC/Parser> Starting VAR rule.");
 
         match self.check(TokenType::Keyword(KeywordType::Var)) {
             ParserState::Continue => {},
@@ -373,9 +366,7 @@ impl Parser {
 
     // TYPE rule
     fn token_type(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting TYPE rule.");
-        }
+        log!("<YASLC/Parser> Starting TYPE rule.");
 
         self.check_and_then_check(TokenType::Keyword(KeywordType::Int),
             TokenType::Keyword(KeywordType::Bool)).0
@@ -383,9 +374,7 @@ impl Parser {
 
     // PROCS rule
     fn procs(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting PROCS rule.");
-        }
+        log!("<YASLC/Parser> Starting PROCS rule.");
 
         match self.token_proc() {
             ParserState::Continue => self.procs(),
@@ -401,9 +390,7 @@ impl Parser {
 
     // PROC rule
     fn token_proc(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting PROC rule.");
-        }
+        log!("<YASLC/Parser> Starting PROC rule.");
 
         self.symbol_table = self.symbol_table.clone().enter();
 
@@ -453,9 +440,7 @@ impl Parser {
 
     // PARAM-LIST rule
     fn param_list(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting PARAM-LIST rule.");
-        }
+        log!("<YASLC/Parser> Starting PARAM-LIST rule.");
 
         match self.check(TokenType::LeftParen) {
             ParserState::Continue => ParserState::Continue,
@@ -478,9 +463,7 @@ impl Parser {
 
     // PARAMS rule
     fn params(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting PARAMS rule.");
-        }
+        log!("<YASLC/Parser> Starting PARAMS rule.");
 
         match self.param() {
             ParserState::Continue => {},
@@ -499,9 +482,7 @@ impl Parser {
 
     // FOLLOW_PARAM rule
     fn follow_param(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting FOLLOW-PARAM rule.");
-        }
+        log!("<YASLC/Parser> Starting FOLLOW-PARAM rule.");
 
         match self.check(TokenType::Comma) {
             ParserState::Continue => {},
@@ -516,9 +497,7 @@ impl Parser {
 
     // PARAM rule
     fn param(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting PARAM rule.");
-        }
+        log!("<YASLC/Parser> Starting PARAM rule.");
 
         match self.check(TokenType::Identifier) {
             ParserState::Continue => {},
@@ -538,9 +517,7 @@ impl Parser {
 
     // STATEMENTS rule
     fn statements(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting STATEMENTS rule.");
-        }
+        log!("<YASLC/Parser> Starting STATEMENTS rule.");
 
         match self.statement() {
             ParserState::Continue => {},
@@ -555,9 +532,7 @@ impl Parser {
 
     // STATEMENT-TAIL rule
     fn statement_tail(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting STATEMENT-TAIL rule.");
-        }
+        log!("<YASLC/Parser> Starting STATEMENT-TAIL rule.");
 
         match self.check(TokenType::Semicolon) {
             ParserState::Continue => {},
@@ -579,9 +554,7 @@ impl Parser {
     // Statement rule is special because there are so many types of statements that we must
     // be more explicit with definitions.
     fn statement(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting STATEMENT rule.");
-        }
+        log!("<YASLC/Parser> Starting STATEMENT rule.");
 
         let token = self.next_token();
 
@@ -662,9 +635,7 @@ impl Parser {
 
     // FOLLOW-IF rule
     fn follow_if(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting FOLLOW-IF rule.");
-        }
+        log!("<YASLC/Parser> Starting FOLLOW-IF rule.");
 
         match self.check(TokenType::Keyword(KeywordType::Else)) {
             ParserState::Continue => self.statement(),
@@ -677,9 +648,7 @@ impl Parser {
 
     // FOLLOW-BEGIN rule
     fn follow_begin(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting FOLLOW-BEGIN rule.");
-        }
+        log!("<YASLC/Parser> Starting FOLLOW-BEGIN rule.");
 
         match self.statement() {
             ParserState::Continue => {},
@@ -699,9 +668,7 @@ impl Parser {
 
     // FOLLOW-ID rule
     fn follow_id(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting FOLLOW-ID rule.");
-        }
+        log!("<YASLC/Parser> Starting FOLLOW-ID rule.");
 
         match self.check(TokenType::Assign) {
             ParserState::Continue => {
@@ -737,9 +704,7 @@ impl Parser {
 
     // FOLLOW-EXPRESSION rule
     fn follow_expression(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting FOLLOW-EXPRESSION rule.");
-        }
+        log!("<YASLC/Parser> Starting FOLLOW-EXPRESSION rule.");
 
         match self.check(TokenType::Comma) {
             ParserState::Continue => {},
@@ -759,9 +724,7 @@ impl Parser {
 
     // FOLLOW-PROMPT rule
     fn follow_prompt(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting FOLLOW-PROMPT rule.");
-        }
+        log!("<YASLC/Parser> Starting FOLLOW-PROMPT rule.");
 
         match self.check(TokenType::Comma) {
             ParserState::Continue => {},
@@ -776,9 +739,7 @@ impl Parser {
 
     // FOLLOW-PRINT
     fn follow_print(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting FOLLOW-PRINT rule.");
-        }
+        log!("<YASLC/Parser> Starting FOLLOW-PRINT rule.");
 
         match self.check(TokenType::String) {
             ParserState::Continue => {
@@ -792,9 +753,7 @@ impl Parser {
     }
 
     fn expression(&mut self) -> ParserState {
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Starting EXPRESSION rule.");
-        }
+        log!("<YASLC/Parser> Starting EXPRESSION rule.");
 
         let mut stack = Vec::<Token>::new();
 
@@ -814,9 +773,7 @@ impl Parser {
                 _ => {
                     match self.check_token(TokenType::Keyword(KeywordType::End), t.clone()) {
                         ParserState::Continue => {
-                            if VERBOSE == true {
-                                println!("<YASLC/Parser> Exiting EXPRESSION rule because we found END token.");
-                            }
+                            log!("<YASLC/Parser> Exiting EXPRESSION rule because we found END token.");
 
                             let expression_stack = ExpressionStack::new_from_tokens(stack, self.symbol_table.clone());
                             if expression_stack.is_valid() == true {
@@ -834,9 +791,7 @@ impl Parser {
             };
         }
 
-        if VERBOSE == true {
-            println!("<YASLC/Parser> Exiting EXPRESSION rule because we ran out of tokens.");
-        }
+        log!("<YASLC/Parser> Exiting EXPRESSION rule because we ran out of tokens.");
 
         ParserState::Done(ParserResult::Unexpected)
     }
@@ -1044,9 +999,7 @@ impl ExpressionStack {
 
 
             } else {
-                if VERBOSE == true {
-                    println!("<YASLC/ExpParser> Warning: attempted to push invalid token onto expression stack.");
-                }
+                log!("<YASLC/ExpParser> Warning: attempted to push invalid token onto expression stack.");
             }
         }
 
@@ -1060,27 +1013,19 @@ impl ExpressionStack {
     fn push_expression(&mut self, e: Expression) {
         match e.clone() {
             Expression::Operand(o) => {
-                if VERBOSE == true {
-                    println!("<YASLC/ExpParser> Attempting to determine the value of operand.");
-                }
+                log!("<YASLC/ExpParser> Attempting to determine the value of operand...");
 
                 // Check if the token is a symbol or a literal
                 match o.parse::<i32>() {
                     Ok(_) => {
-                        if VERBOSE == true {
-                            println!("<YASLC/ExpParser> Detected integer literal.");
-                        }
+                        log!("<YASLC/ExpParser> Detected integer literal.");
                     },
                     Err(_) => {
                         if o == "true" || o == "false" {
-                            if VERBOSE == true {
-                                println!("<YASLC/ExpParser> Detected boolean literal.");
-                            }
+                            log!("<YASLC/ExpParser> Detected boolean literal.");
                         } else {
                             // It is a symbol
-                            if VERBOSE == true {
-                                println!("<YASLC/ExpParser> Detected a symbol. Looking up in the symbol table.");
-                            }
+                            log!("<YASLC/ExpParser> Detected a symbol. Looking up in the symbol table.");
                             // TODO: Set to variable to get value
                             match self.table.get(&*o) {
                                 Some(v) => {
@@ -1096,9 +1041,7 @@ impl ExpressionStack {
                 };
             },
             Expression::Operator(_) => {
-                if VERBOSE == true {
-                    println!("<YASLC/ExpParser> Don't need to determine the value, is an operator.");
-                }
+                // Don't need to determine the value, its an operator
             },
         }
 
