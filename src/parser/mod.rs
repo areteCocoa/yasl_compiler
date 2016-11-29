@@ -14,6 +14,7 @@ use std::fmt;
 
 #[allow(unused_imports)]
 use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
+use self::file_generator::file_from_commands;
 
 static mut VERBOSE: bool = true;
 
@@ -77,10 +78,7 @@ impl Parser {
                 match r {
                     ParserResult::Success => {
                         println!("<YASLC/Parser> Correctly parsed YASL program file.");
-                        log!("<YASLC/Parser> Printing file output: ");
-                        for o in self.out.clone() {
-                            println!("{}", o);
-                        }
+                        file_from_commands(self.out.clone());
                     },
                     _ => {
                         // Get the error token
