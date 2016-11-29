@@ -14,7 +14,7 @@ use std::fmt;
 
 #[allow(unused_imports)]
 use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
-use self::file_generator::file_from_commands;
+use self::file_generator::file_from;
 
 static mut VERBOSE: bool = true;
 
@@ -35,6 +35,9 @@ pub struct Parser {
     // The set of tokens
     tokens: Vec<Token>,
 
+    // The last expression stack from the evaluated expression
+    e_stack: Option<ExpressionStack>,
+
     // The last popped token
     last_token: Option<Token>,
 
@@ -45,7 +48,10 @@ pub struct Parser {
     stack: Vec<Token>,
 
     // The vector of strings for output to the file
-    out: Vec<String>,
+    commands: Vec<String>,
+
+    // A vector of declarations for output to the file
+    declarations: Vec<String>,
 }
 
 /*
@@ -61,11 +67,15 @@ impl Parser {
 
             last_token: None,
 
+            e_stack: None,
+
             symbol_table: SymbolTable::empty(),
 
             stack: Vec::<Token>::new(),
 
-            out: Vec::<String>::new(),
+            commands: Vec::<String>::new(),
+
+            declarations: Vec::<String>::new(),
         }
     }
 
@@ -78,7 +88,7 @@ impl Parser {
                 match r {
                     ParserResult::Success => {
                         println!("<YASLC/Parser> Correctly parsed YASL program file.");
-                        file_from_commands(self.out.clone());
+                        file_from(self.commands.clone(), self.declarations.clone());
                     },
                     _ => {
                         // Get the error token
@@ -156,9 +166,39 @@ impl Parser {
         }
     }
 
-    fn add_command(&mut self, command: String) {
-        log!("<YASLC/Parser> Adding command to list of output: \'{}\'", command);
-        self.out.push(command);
+    fn add_command(&mut self, command: &str) {
+        let s = self.commands.len();
+        if s > 0 {
+            if self.commands[self.commands.len() - 1] == "$main".to_string() {
+                // If we have the main label but haven't pushed a command we need to push the command
+                // in front of $main
+                self.commands.remove(s - 1);
+
+                let com = format!("$main {}", command);
+                log!("<YASLC/Parser> Adding command to list of output after appending $main: \'{}\'", com);
+                self.commands.push(com);
+            } else {
+                log!("<YASLC/Parser> Adding command to list of output: \'{}\'", command);
+                self.commands.push(command.to_string());
+            }
+        } else {
+            log!("<YASLC/Parser> Adding command to list of output: \'{}\'", command);
+            self.commands.push(command.to_string());
+        }
+    }
+
+    fn add_print_command(&mut self, print_message: &str) {
+        let mut i = 0;
+        for c in print_message.chars() {
+            if i != 0 && i != print_message.len()-1 {
+                self.add_command(&*format!("outb ^{}", c));
+            }
+            i += 1;
+        }
+    }
+
+    fn add_declaration(&mut self, declaration: &str, size: u32) {
+        self.declarations.push(format!("${} #{}", declaration, size));
     }
 
     /**
@@ -186,6 +226,9 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
+        // To the first block
+        self.add_command("$main");
+
         match self.block() {
             ParserState::Continue => {},
             _ => return ParserState::Done(ParserResult::Unexpected),
@@ -194,6 +237,8 @@ impl Parser {
         match self.check(TokenType::Period) {
             ParserState::Continue => {
                 log!("<YASLC/Parser> Exiting Parser because we found the final period.");
+
+                self.add_command("end");
 
                 ParserState::Done(ParserResult::Success)
             },
@@ -317,7 +362,8 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
-        self.symbol_table.add(id, SymbolType::Constant(SymbolValueType::Bool));
+        self.symbol_table.add(id.clone(), SymbolType::Constant(SymbolValueType::Bool));
+        self.add_declaration(&*id, 4);
 
         match self.check(TokenType::Semicolon) {
             ParserState::Continue => ParserState::Continue,
@@ -375,7 +421,8 @@ impl Parser {
             _ => return ParserState::Done(ParserResult::Unexpected),
         };
 
-        self.symbol_table.add(id, SymbolType::Variable(t));
+        self.symbol_table.add(id.clone(), SymbolType::Variable(t));
+        self.add_declaration(&*id, 4);
 
         self.check(TokenType::Semicolon)
     }
@@ -630,11 +677,41 @@ impl Parser {
         match self.check_token(TokenType::Keyword(KeywordType::Prompt), token.clone()) {
             ParserState::Continue => {
                 match self.check(TokenType::String) {
-                    ParserState::Continue => {},
+                    ParserState::Continue => {
+                        // Output the string
+                        let l = self.last_token().unwrap().lexeme();
+                        self.add_print_command(&*l)
+                    },
                     _ => return ParserState::Done(ParserResult::Unexpected),
                 };
 
-                return self.follow_prompt();
+                match self.follow_prompt() {
+                    ParserState::Continue => {
+                        // Check if we're taking input or not
+
+                        // Get the variable, whether it's junk or an actual varible
+                        let v = match self.last_token() {
+                            Some(t) => {
+                                // If there's a value then we successfully parsed the Identifier
+                                log!("<YASLC/Parser> Parsed PROMPT with identifier, adding to compiled file.");
+                                format!("${}", t.lexeme())
+                            },
+                            None => {
+                                // If there's no value, we have no identifier
+                                log!("<YASLC/Parser> Parsed PROMPT without identifier, using $junk and adding to compiled file.");
+                                "$junk".to_string()
+                            }
+                        };
+
+                        // Prompt for the variable
+                        log!("<YASLC/Parser> Adding prompt command for variable {}", v);
+
+                        self.add_command(&*format!("inw {}", v));
+
+                        return ParserState::Continue;
+                    },
+                    a => return a,
+                }
             },
             _ => {},
         };
@@ -745,6 +822,7 @@ impl Parser {
         match self.check(TokenType::Comma) {
             ParserState::Continue => {},
             _ => {
+                // It was not, we ignore the input
                 self.insert_last_token();
                 return ParserState::Continue;
             },
@@ -759,7 +837,13 @@ impl Parser {
 
         match self.check(TokenType::String) {
             ParserState::Continue => {
-                println!("Printing string {}", self.last_token().unwrap().lexeme());
+                // It is a String
+
+                let m = self.last_token().unwrap().lexeme();
+                self.add_print_command(&*m);
+
+                log!("<YASLC/Parser> Successfully parsed print statement, compiling to file.");
+
                 return ParserState::Continue
             },
             _ => self.insert_last_token(),
@@ -1107,11 +1191,4 @@ impl ExpressionStack {
     fn is_valid(&self) -> bool {
         true
     }
-
-    // TODO: Move to display trait
-    // fn print_stack(&self) {
-    //     for e in self.expressions.iter() {
-    //         println!("{}", e);
-    //     }
-    // }
 }
