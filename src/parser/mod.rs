@@ -110,7 +110,7 @@ impl Parser {
             self.tokens.insert(0, a);
             self.last_token = None;
         } else {
-            println!("<YASLC/Parser> Internal warning: Attempted to insert the last token into the parser but there is no last token!");
+            log!("<YASLC/Parser> Internal warning: Attempted to insert the last token into the parser but there is no last token!");
         }
     }
 
@@ -764,8 +764,13 @@ impl Parser {
                     let expression_stack = ExpressionStack::new_from_tokens(stack, self.symbol_table.clone());
                     if expression_stack.is_valid() == true {
                         self.tokens.insert(0, t);
+                        log!("<YASLC/Parser> Successfully exiting EXPRESSION rule because the expression stack is valid.");
+                        for t in expression_stack.left_over {
+                            self.tokens.insert(0, t);
+                        }
                         return ParserState::Continue;
                     } else {
+                        log!("<YASLC/Parser> Exiting EXPRESSION rule because the expression stack is invalid!");
                         return ParserState::Done(ParserResult::Unexpected);
                     }
                 },
@@ -778,8 +783,13 @@ impl Parser {
                             let expression_stack = ExpressionStack::new_from_tokens(stack, self.symbol_table.clone());
                             if expression_stack.is_valid() == true {
                                 self.tokens.insert(0, t);
+                                log!("<YASLC/Parser> Successfully exiting EXPRESSION rule because the expression stack is valid.");
+                                for t in expression_stack.left_over {
+                                    self.tokens.insert(0, t);
+                                }
                                 return ParserState::Continue;
                             } else {
+                                log!("<YASLC/Parser> Exiting EXPRESSION rule because the expression stack is invalid!");
                                 return ParserState::Done(ParserResult::Unexpected);
                             }
                         },
@@ -791,7 +801,7 @@ impl Parser {
             };
         }
 
-        log!("<YASLC/Parser> Exiting EXPRESSION rule because we ran out of tokens.");
+        log!("<YASLC/Parser> Exiting EXPRESSION rule because unexpectedly we ran out of tokens.");
 
         ParserState::Done(ParserResult::Unexpected)
     }
@@ -978,13 +988,16 @@ struct ExpressionStack {
     expressions: Vec<Expression>,
 
     table: SymbolTable,
+
+    left_over: Vec<Token>
 }
 
 impl ExpressionStack {
     fn new(table: SymbolTable) -> ExpressionStack {
         ExpressionStack {
             expressions: Vec::<Expression>::new(),
-            table: table
+            table: table,
+            left_over: Vec::<Token>::new()
         }
     }
 
@@ -992,14 +1005,15 @@ impl ExpressionStack {
         let mut e_stack = ExpressionStack::new(table);
 
         for t in tokens.into_iter() {
-            if let Some(exp) = Expression::from_token(t) {
+            if let Some(exp) = Expression::from_token(t.clone()) {
 
 
                 e_stack.push_expression(exp);
 
 
             } else {
-                log!("<YASLC/ExpParser> Warning: attempted to push invalid token onto expression stack.");
+                log!("<YASLC/ExpParser> Warning: attempted to push invalid token {} onto expression stack.", t.clone());
+                e_stack.left_over.push(t)
             }
         }
 
@@ -1042,6 +1056,7 @@ impl ExpressionStack {
             },
             Expression::Operator(_) => {
                 // Don't need to determine the value, its an operator
+                log!("<YASLC/ExpParser> Skipping determining the value of expression {}.", e);
             },
         }
 
