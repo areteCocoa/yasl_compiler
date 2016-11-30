@@ -4,17 +4,19 @@
 ///
 
 pub mod symbol;
+mod expression;
 mod file_generator;
 
-use super::lexer::{Token, TokenType, KeywordType};
+pub use super::lexer::{Token, TokenType, KeywordType};
 
 use std::cmp::Ordering;
 
 use std::fmt;
 
 #[allow(unused_imports)]
-use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
+pub use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
 use self::file_generator::file_from;
+use self::expression::ExpressionParser;
 
 static mut VERBOSE: bool = true;
 
@@ -88,7 +90,7 @@ pub struct Parser {
     tokens: Vec<Token>,
 
     // The last expression stack from the evaluated expression
-    e_stack: Option<ExpressionStack>,
+    e_parser: Option<ExpressionParser>,
 
     // The last popped token
     last_token: Option<Token>,
@@ -119,7 +121,7 @@ impl Parser {
 
             last_token: None,
 
-            e_stack: None,
+            e_parser: None,
 
             symbol_table: SymbolTable::empty(),
 
@@ -829,8 +831,8 @@ impl Parser {
                 ParserState::Continue => {
                     log!("<YASLC/Parser> Exiting EXPRESSION rule because we found the SEMI token.");
 
-                    let expression_stack = ExpressionStack::new_from_tokens(stack, self.symbol_table.clone());
-                    return self.parse_expression_stack(expression_stack, t);
+                    self.tokens.insert(0, t);
+                    return self.parse_expression_tokens(stack);
                 },
 
                 // If it is not a semicolon
@@ -840,10 +842,22 @@ impl Parser {
                         ParserState::Continue => {
                             log!("<YASLC/Parser> Exiting EXPRESSION rule because we found END token.");
 
-                            let expression_stack = ExpressionStack::new_from_tokens(stack, self.symbol_table.clone());
-                            return self.parse_expression_stack(expression_stack, t);
+                            self.tokens.insert(0, t);
+                            return self.parse_expression_tokens(stack);
                         },
-                        _ => {},
+                        _ => {
+                            match self.check_token(TokenType::RightParen, t.clone()) {
+                                ParserState::Continue => {
+                                    // if it is not end but instead right paren
+                                    log!("<YASLC/Parser> Exiting EXPRESSION rule because we found RPAREN token.");
+
+                                    self.tokens.insert(0, t);
+                                    return self.parse_expression_tokens(stack);
+                                },
+                                _ => {}
+                            };
+
+                        },
                     };
 
                     stack.push(t);
@@ -856,29 +870,43 @@ impl Parser {
         ParserState::Done(ParserResult::Unexpected)
     }
 
-    fn parse_expression_stack(&mut self, expression_stack: ExpressionStack, t: Token) -> ParserState {
-        if expression_stack.is_valid() == true {
-            self.tokens.insert(0, t);
-            log!("<YASLC/Parser> Successfully exiting EXPRESSION rule because the expression stack is valid.");
-            for t in expression_stack.left_over {
-                self.tokens.insert(0, t);
+    fn parse_expression_tokens(&mut self, tokens: Vec<Token>) -> ParserState {
+        match ExpressionParser::new(self.symbol_table.clone(), tokens) {
+            Some(e) => {
+                log!("<YASLC/Parser> Expression parser successfully exited!");
+                self.e_parser = Some(e);
+                ParserState::Continue
+            },
+            None => {
+                log!("<YASLC/Parser> Expression parser was not successful.");
+                ParserState::Done(ParserResult::Unexpected)
             }
-
-            if expression_stack..commands.len() == 0 {
-
-            } else {
-                for c in expression_stack.commands {
-                    self.add_command(&*c);
-                }
-            }
-
-
-            return ParserState::Continue;
-        } else {
-            log!("<YASLC/Parser> Exiting EXPRESSION rule because the expression stack is invalid!");
-            return ParserState::Done(ParserResult::Unexpected);
         }
     }
+
+    // fn parse_expression_stack(&mut self, expression_stack: ExpressionStack, t: Token) -> ParserState {
+    //     if expression_stack.is_valid() == true {
+    //         self.tokens.insert(0, t);
+    //         log!("<YASLC/Parser> Successfully exiting EXPRESSION rule because the expression stack is valid.");
+    //         for t in expression_stack.left_over {
+    //             self.tokens.insert(0, t);
+    //         }
+    //
+    //         if expression_stack..commands.len() == 0 {
+    //
+    //         } else {
+    //             for c in expression_stack.commands {
+    //                 self.add_command(&*c);
+    //             }
+    //         }
+    //
+    //
+    //         return ParserState::Continue;
+    //     } else {
+    //         log!("<YASLC/Parser> Exiting EXPRESSION rule because the expression stack is invalid!");
+    //         return ParserState::Done(ParserResult::Unexpected);
+    //     }
+    // }
 
 
 }
@@ -899,344 +927,4 @@ enum ParserResult {
 
     // The parser reached an unexpected token, should return an error and stop
     Unexpected,
-}
-
-/*
- * Expression parser
- *
- */
-
-#[derive(PartialEq, Clone)]
-enum Expression {
-    // +, -, etc
-    // TokenType is wrapped to store what kind of operator this is
-    Operator(TokenType),
-
-    // 2, 5, 7.5, etc
-    // The string is stored to have the value of the operand or its name
-    Operand(String)
-}
-
-impl Expression {
-    // Creates a new expression from a token
-    fn from_token(t: Token) -> Option<Expression> {
-        match t.token_type() {
-            TokenType::Number => Some(Expression::Operand(t.lexeme())),
-
-            TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Keyword(KeywordType::Div)
-            | TokenType::Keyword(KeywordType::Mod) | TokenType::GreaterThan | TokenType::LessThan
-            | TokenType::GreaterThanOrEqual | TokenType::LessThanOrEqual | TokenType::EqualTo
-            | TokenType::NotEqualTo => Some(Expression::Operator(t.token_type())),
-
-
-            TokenType::Keyword(KeywordType::Print) => Some(Expression::Operator(t.token_type())),
-
-            TokenType::Identifier => Some(Expression::Operand(t.lexeme())),
-
-            _ => {
-                None
-            },
-        }
-    }
-}
-
-impl PartialOrd for Expression {
-    fn partial_cmp(&self, other: &Expression) -> Option<Ordering> {
-        use self::Expression::*;
-
-        match self {
-            // *, div, mod (4)
-            &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
-            | &Operator(TokenType::Keyword(KeywordType::Mod)) => {
-                // * or div or mod
-                match other {
-                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))|
-                    &Operator(TokenType::Keyword(KeywordType::Mod)) => Some(Ordering::Less),
-
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Greater),
-
-                    &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
-                    | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual)
-                        => Some(Ordering::Greater),
-
-                    &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Greater),
-
-                    &Operand(_) => Some(Ordering::Less),
-
-                    _ => None,
-                }
-            },
-
-            // +, - (3)
-            &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => {
-                // + or -
-                match other {
-                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
-                    | &Operator(TokenType::Keyword(KeywordType::Mod))
-                    | &Operand(_) => Some(Ordering::Less),
-
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Less),
-
-                    &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
-                    | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual)
-                        => Some(Ordering::Greater),
-
-                    &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Greater),
-
-                    _ => None,
-                }
-            },
-
-            // >, <, >=, <= (2)
-            &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
-            | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual) => {
-                match other {
-                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
-                    | &Operator(TokenType::Keyword(KeywordType::Mod))
-                    | &Operand(_) => Some(Ordering::Less),
-
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Less),
-
-                    &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
-                    | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual)
-                        => Some(Ordering::Less),
-
-                    &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Greater),
-
-                    _ => None,
-                }
-            },
-
-            &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => {
-                match other {
-                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))
-                    | &Operator(TokenType::Keyword(KeywordType::Mod))
-                    | &Operand(_) => Some(Ordering::Less),
-
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) => Some(Ordering::Less),
-
-                    &Operator(TokenType::GreaterThan) | &Operator(TokenType::LessThan)
-                    | &Operator(TokenType::GreaterThanOrEqual) | &Operator(TokenType::LessThanOrEqual)
-                        => Some(Ordering::Less),
-
-                    &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Less),
-
-                    _ => None,
-                }
-            }
-
-            &Operand(_) => {
-                // Any number
-                match other {
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) |
-                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))|
-                    &Operator(TokenType::Keyword(KeywordType::Mod)) => Some(Ordering::Greater),
-
-                    &Operand(_) => None,
-
-                    _ => None,
-                }
-            }
-
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for Expression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &Expression::Operator(ref t) => {
-                write!(f, "{}", t)
-            },
-            &Expression::Operand(ref v) => {
-                write!(f, "{}", v)
-            }
-        }
-    }
-}
-
-// ExpressionParser validates the syntax of an expression as well as reduces it and
-// manages memory allocation for temporary variables used for arithmatic
-struct ExpressionParser {
-
-}
-
-// ExpressionStack is responsible for push expressions to the stack as well as
-// managing operator precedence for expressions
-struct ExpressionStack {
-    expressions: Vec<Expression>,
-
-    post_fix: Vec<Expression>,
-
-    table: SymbolTable,
-
-    commands: Vec<String>,
-
-    left_over: Vec<Token>
-}
-
-impl ExpressionStack {
-    fn new(table: SymbolTable) -> ExpressionStack {
-        ExpressionStack {
-            expressions: Vec::<Expression>::new(),
-            post_fix: Vec::<Expression>::new(),
-            table: table,
-            left_over: Vec::<Token>::new(),
-            commands: Vec::<String>::new()
-        }
-    }
-
-    fn new_from_tokens(tokens: Vec<Token>, table: SymbolTable) -> ExpressionStack {
-        let mut e_stack = ExpressionStack::new(table);
-
-        for t in tokens.into_iter() {
-            if let Some(exp) = Expression::from_token(t.clone()) {
-
-
-                e_stack.push_expression(exp);
-
-
-            } else {
-                log!("<YASLC/ExpParser> Warning: attempted to push invalid token {} onto expression stack.", t.clone());
-                e_stack.left_over.push(t)
-            }
-        }
-
-        while e_stack.post_fix.len() > 0 {
-            e_stack.reduce();
-        }
-        // while let Some(e) = e_stack.expressions.pop() {
-        //     //println!("{}", e);
-        // }
-
-        e_stack
-    }
-
-    fn push_expression(&mut self, e: Expression) {
-        // Match the expression to try and determine the value
-        match e.clone() {
-            Expression::Operand(o) => {
-                log!("<YASLC/ExpParser> Attempting to determine the value of operand...");
-
-                // Check if the token is a symbol or a literal
-                match o.parse::<i32>() {
-                    Ok(_) => {
-                        log!("<YASLC/ExpParser> Detected integer literal.");
-                    },
-                    Err(_) => {
-                        if o == "true" || o == "false" {
-                            log!("<YASLC/ExpParser> Detected boolean literal.");
-                        } else {
-                            // It is a symbol
-                            log!("<YASLC/ExpParser> Detected a symbol. Looking up in the symbol table.");
-                            // TODO: Set to variable to get value
-                            match self.table.get(&*o) {
-                                Some(v) => {
-                                    match v.symbol_type {
-                                        SymbolType::Procedure => panic!("<YASLC/ExpParser> Error: Illicitly used PROC \'{}\' as a variable!"),
-                                        _ => {}
-                                    }
-                                },
-                                None => panic!("<YASLC/ExpParser> Error: Used symbol \'{}\' that is not in the symbol table!", o),
-                            };
-                        }
-                    }
-                };
-            },
-            Expression::Operator(_) => {
-                // Don't need to determine the value, its an operator
-                log!("<YASLC/ExpParser> Skipping determining the value of expression {}.", e);
-            },
-        }
-
-        match e.clone() {
-            Expression::Operand(_) => {
-                self.post_fix.push(e);
-            },
-            Expression::Operator(_) => {
-                // if the stack is empty, just push it
-                if self.expressions.len() <= 0 {
-                    log!("<YASLC/ExpParser> Pushing expression {} onto expression stack.", e);
-                    self.expressions.push(e);
-                } // if the item is an operator (this will need to be changed with the addition of parenthesis)
-                else {
-                    // if the item on the top of the stack is lower priority
-                    if e >= self.expressions[self.expressions.len() - 1] {
-                        log!("<YASLC/ExpParser> Pushing expression {} onto expression stack.", e);
-                        self.expressions.push(e);
-                    } else {
-                        // Pop items off the stack, write to output, until we get to one with lower
-                        // priority (or the stack empties), then push item to stack
-                        while e <= self.expressions[self.expressions.len() - 1] && self.expressions.len() > 1 {
-                            self.post_fix.push(e.clone());
-
-                        }
-                        self.expressions.push(e);
-                    }
-                } // else if parenthesis
-            }
-        }
-    }
-
-    fn is_valid(&self) -> bool {
-        true
-    }
-
-    fn reduce(&mut self) {
-        for e in self.post_fix.clone() {
-            print!(" {} ", e);
-        }
-        println!("");
-
-        let ex = self.post_fix.remove(0);
-        log!("<YASLC/ExpParser> Reducing expression stack.");
-        // REDUCTION
-        match ex {
-            Expression::Operator(t) => {
-                let command = match t {
-                    TokenType::Plus => "addw",
-                    TokenType::Minus => "subw",
-                    TokenType::Star => "mulw",
-                    TokenType::Keyword(KeywordType::Div) => "divw",
-                    _ => {
-                        log!("<YASLC/ExpParser> Internal Warning: Unrecognized operator, ignoring.");
-                        ""
-                    }
-                };
-
-                // Pop the next two
-                let first = match self.post_fix.pop() {
-                    Some(Expression::Operand(l)) => l,
-                    _ => panic!("Interal error with stack! Expected an operand but found an operator!"),
-                };
-                let second = match self.post_fix.pop() {
-                    Some(Expression::Operand(l)) => l,
-                    _ => panic!("Interal error with stack! Expected an operand but found an operator!"),
-                };
-
-                let s1 = match self.table.get(&*first) {
-                    Some(x) => x,
-                    None => panic!("Internal error with symbol table! Could not find value for symbol being used."),
-                }.clone();
-                let s2 = match self.table.get(&*second) {
-                    Some(x) => x,
-                    None => panic!("Internal error with symbol table! Could not find value for symbol being used."),
-                }.clone();
-
-                let mut temp = self.table.temp();
-                temp.set_register(1);
-
-                let final_command = format!("{} +{}R{} +{}@R{}", command, s1.offset(), s1.register(), s2.offset(), s2.register());
-                self.commands.push(final_command);
-            },
-            Expression::Operand(_) => {
-                if self.post_fix.len() == 0 {
-                    println!("<YASLC/ExpParser> Finished reducing, we only have one thing left now.");
-                } else {
-                    println!("<YASLC/ExpParser> Internal Warning: Encountered an Operand where we though we should not!");
-                }
-            }
-        };
-    }
 }

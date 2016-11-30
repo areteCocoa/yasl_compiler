@@ -145,7 +145,7 @@ impl fmt::Display for KeywordType {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct Token {
     token_type: TokenType,
     line: u32,

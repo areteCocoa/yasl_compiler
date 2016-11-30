@@ -2,7 +2,7 @@
 /// The symbol module is responsible for maintaining a symbol tree
 ///
 
-static mut VERBOSE: bool = false;
+static mut VERBOSE: bool = true;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {
