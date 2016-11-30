@@ -120,12 +120,17 @@ impl SymbolTable {
             identifier: name,
             symbol_type: SymbolType::Variable(SymbolValueType::Int),
             offset: self.next_offset,
-            register: 0,
+            register: 1,
         };
 
         self.next_temp += 1;
+        self.next_offset += 4;
 
         s
+    }
+
+    pub fn reset_offset(&mut self) {
+        self.next_offset = 0;
     }
 
     fn print_table(&self) {
@@ -145,7 +150,7 @@ impl SymbolTable {
 
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Symbol {
     identifier: String,
     pub symbol_type: SymbolType,
@@ -175,14 +180,14 @@ impl Symbol {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum SymbolType {
     Procedure,
     Variable(SymbolValueType),
     Constant(SymbolValueType),
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum SymbolValueType {
     Int,
     Bool,

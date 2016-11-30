@@ -856,7 +856,6 @@ impl Parser {
                                 },
                                 _ => {}
                             };
-
                         },
                     };
 
@@ -874,6 +873,17 @@ impl Parser {
         match ExpressionParser::new(self.symbol_table.clone(), tokens) {
             Some(e) => {
                 log!("<YASLC/Parser> Expression parser successfully exited!");
+
+                // Add the commands to this list of commands
+                for c in e.commands() {
+                    log!("{}", c);
+                    self.add_command(&*c);
+                }
+
+                // Reset the symbol table
+                self.symbol_table.reset_offset();
+
+                // Set the expression parser to our field and continue
                 self.e_parser = Some(e);
                 ParserState::Continue
             },
