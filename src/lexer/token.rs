@@ -171,6 +171,15 @@ impl Token {
         }
     }
 
+    pub fn new_with(line: u32, column: u32, lexeme: String, token_type: TokenType) -> Token {
+        Token {
+            line: line,
+            column: column,
+            lexeme: lexeme,
+            token_type: token_type,
+        }
+    }
+
     /// Returns the token_type for this token.
     pub fn token_type(&self) -> TokenType {
         self.token_type.clone()
