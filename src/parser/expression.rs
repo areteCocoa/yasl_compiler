@@ -1,7 +1,7 @@
-/*
- * Expression parser
- *
- */
+/// parser/expression.rs
+///
+/// The expression module contains the expression parser and all the implementation
+/// for the expression parser.
 
 use super::{Token, TokenType, KeywordType};
 use super::{Symbol, SymbolTable, SymbolType};
@@ -9,35 +9,44 @@ use super::{Symbol, SymbolTable, SymbolType};
 use std::cmp::Ordering;
 use std::fmt;
 
- static mut VERBOSE: bool = true;
+/// Set to true if you want the expression parser to print its process.
+static mut VERBOSE: bool = true;
 
- macro_rules! log {
-     ($message:expr $(,$arg:expr)*) => {
-         unsafe {
-             if VERBOSE == true {
-                 println!($message, $($arg,)*);
-             }
-         }
-     };
- }
+macro_rules! log {
+    ($message:expr $(,$arg:expr)*) => {
+        unsafe {
+            if VERBOSE == true {
+                println!($message, $($arg,)*);
+            }
+        }
+    };
+}
 
+/// Expression represents a single piece of expressions.
 #[derive(PartialEq, Clone)]
 enum Expression {
-    // +, -, etc
-    // TokenType is wrapped to store what kind of operator this is
+    /// Operator are all expressions that modify Operands or Combined expressions.
+    ///
+    /// Example: +, -, etc
+    ///
+    /// TokenType is wrapped to store what kind of operator this is.
     Operator(TokenType),
 
-    // 2, 5, 7.5, etc
-    // The string is stored to have the value of the operand or its name
+    /// Operand is any expression that can be operated on by an operator.
+    ///
+    // Example: 2, 5, 7.5, etc
+    ///
+    // The string is stored to have the value of the operand or its name.
     Operand(Token),
 
-    // A combined expression using three other expressions, in
-    // operand - operator - operand format
+    /// A combined expression using three other expressions, in
+    /// operand - operator - operand format.
     Combined(Symbol),
 }
 
 impl Expression {
-    // Creates a new expression from a token
+    /// Creates a new expression from a token and returns Some(e) where e is a valid expression,
+    /// or returns None if the expression is not valid given the token.
     fn from_token(t: Token) -> Option<Expression> {
         match t.token_type() {
             TokenType::Number => Some(Expression::Operand(t)),
@@ -59,6 +68,7 @@ impl Expression {
     }
 }
 
+// Define ordering for expressions because that is used in reducing expressions from postfix.
 impl PartialOrd for Expression {
     fn partial_cmp(&self, other: &Expression) -> Option<Ordering> {
         use self::Expression::*;
@@ -178,14 +188,16 @@ impl fmt::Display for Expression {
     }
 }
 
-// ExpressionParser validates the syntax of an expression as well as reduces it and
-// manages memory allocation for temporary variables used for arithmatic
+/// ExpressionParser validates the syntax of an expression as well as reduces it and
+/// manages memory allocation for temporary variables used for arithmatic.
 pub struct ExpressionParser {
+    /// The list of commands to be pushed onto the program given this expression.
     commands: Vec<String>,
 }
 
 impl ExpressionParser {
-    // Creates a new ExpressionParser given the tokens and parses through them
+    /// Creates a new ExpressionParser given the tokens and parses through them. It returns
+    /// Some(e) where e is a valid expression parser if there is no error and None otherwise.
     pub fn new(mut table: SymbolTable, tokens: Vec<Token>) -> Option<ExpressionParser> {
         // Convert the tokens into expressions
         let expressions = match ExpressionParser::tokens_to_expressions(tokens) {
@@ -316,12 +328,13 @@ impl ExpressionParser {
         })
     }
 
+    /// Returns a list of commands from this expression parser.
     pub fn commands(&self) -> Vec<String> {
         self.commands.clone()
     }
 
-    // Converts the vector of tokens to a vector of expressions and returns None if there was an
-    // invalid token
+    /// Converts the vector of tokens to a vector of expressions and returns None if there was an
+    /// invalid token.
     fn tokens_to_expressions(mut tokens: Vec<Token>) -> Option<Vec<Expression>> {
         let mut expressions = Vec::<Expression>::new();
         // while there's still tokens, push them onto the stack
@@ -347,7 +360,7 @@ impl ExpressionParser {
         Some(expressions)
     }
 
-    // Converts the vector of expressions to postfix from infix.
+    /// Converts the vector of expressions to postfix from infix.
     fn expressions_to_postfix(expressions: Vec<Expression>) -> Option<Vec<Expression>> {
         // Initialize the stack and the operator stack
         let mut stack: Vec<Expression> = Vec::<Expression>::new();

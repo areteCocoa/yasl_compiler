@@ -1,7 +1,10 @@
+/// parser/symbol.rs
 ///
-/// The symbol module is responsible for maintaining a symbol tree
+/// The symbol module is responsible for maintaining a symbol tree and making sure
+/// it is valid.
 ///
 
+/// Set to true if you want the logs of symbol functionality, false otherwise.
 static mut VERBOSE: bool = true;
 
 macro_rules! log {
@@ -113,6 +116,8 @@ impl SymbolTable {
         }
     }
 
+    /// Returns the next temp variable using $(NUMBER) where NUMBER is incremented and
+    /// guarenteed to be unique.
     pub fn temp(&mut self) -> Symbol {
         let name = format!("${}", self.next_temp);
 
@@ -129,10 +134,12 @@ impl SymbolTable {
         s
     }
 
+    /// Resets the next_offset property.
     pub fn reset_offset(&mut self) {
         self.next_offset = 0;
     }
 
+    /// Prints the table's sub-tables and then itself.
     fn print_table(&self) {
         if let Some(ref b) = self.old_table {
             b.print_table();
@@ -149,12 +156,19 @@ impl SymbolTable {
 }
 
 
-
+/// A single symbol with an identifier, offset on the stack and register, as well as a type.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Symbol {
+    /// The identifier for this symbol.
     identifier: String,
+
+    /// The type for this symbol.
     pub symbol_type: SymbolType,
+
+    /// The offest for this symbol.
     offset: u32,
+
+    /// The register for which to offset from for this symbol.
     register: u32,
 }
 
@@ -180,13 +194,21 @@ impl Symbol {
     }
 }
 
+/// The type of symbol.
 #[derive(Clone, PartialEq, Debug)]
 pub enum SymbolType {
+    /// The symbol is a procedure.
     Procedure,
+
+    /// The symbol is a variable.
     Variable(SymbolValueType),
+
+    /// The symbol is a constant.
     Constant(SymbolValueType),
 }
 
+/// If the symbol type can have a value, it needs to be typed. SymbolValueType
+/// represents different primitive types within YASL.
 #[derive(Clone, PartialEq, Debug)]
 pub enum SymbolValueType {
     Int,

@@ -1,22 +1,21 @@
-// scanner.rs
-//
-// Thomas Ring
-// August 30, 2016
-//
+/// lexer/scanner.rs
+///
+/// The scanner module is responsible for parsing input files and returning sets of tokens
+/// based on those input files.
+///
+/// Much of the code is based on the LL(1) parser from class and earlier in the project.
 
 // Include the token struct and functions
 use lexer::token::*;
 
 // Include input methods and string classes
-use std::io::{self, Read};
+use std::io::{Read};
 use std::fs::File;
 
-// Define a Scanner struct (class)
+/// Scanner is the struct responsible for handling and returning the token set based on the
+/// input file, as well as reading the file.
 pub struct Scanner {
-    // Public fields
-    //
-    //
-    // Properties
+    /// The file associated with this scanner.
     file: File,
 
     // Used to construct tokens
@@ -24,18 +23,22 @@ pub struct Scanner {
     // in addition to the line and column number because the start line/column
     // of the token does not change but the cursor position does
     token_builder: TokenBuilder,
+
+    /// The current line number
     line_number: u32,
+
+    /// The current column number
     column_number: u32,
 
-    // Storing tokens
+    /// tokens is the vector of tokens from the input file
     pub tokens: Vec<Token>,
 
-    // The set of tokens from the last input
+    /// the set of tokens from the last input, most useful when using stdin
     pub new_tokens: Vec<Token>,
 }
 
 impl Scanner {
-    // Creates a new scanner from the file_string and returns it
+    /// Creates a new Scanner from the file_string and returns it.
     pub fn new_from_file(file_string: String) -> Option<Scanner> {
         // Open the file so we can set it as a property
         let file = match File::open(file_string.clone()) {
@@ -61,9 +64,9 @@ impl Scanner {
         })
     }
 
-    // Reads the file for this scanner and returns Ok(tokens) where tokens
-    // is a list of tokens or Err(error message) where error message is an
-    // string describing the error. Consumes the scanner.
+    /// Reads the file for this scanner and returns Ok(tokens) where tokens
+    /// is a list of tokens or Err(error message) where error message is an
+    /// string describing the error. Consumes the scanner.
     pub fn read_file(mut self) -> Result<Vec<Token>, String> {
         // Read the string to a file
         let mut buffer = String::new();
@@ -87,22 +90,25 @@ impl Scanner {
         Ok(self.tokens)
     }
 
+    // Commented out to suppress warnings, will be re-implemented later
     // Reads a single line from stdin
-    pub fn read(&mut self) {
-        let mut input = String::new();
-        match io::stdin().read_line(&mut input) {
-            Ok(_) => self.handle_line(input.clone()),
-            Err(e) => println!("{}", e),
-        }
-    }
+    // pub fn read(&mut self) {
+    //     let mut input = String::new();
+    //     match io::stdin().read_line(&mut input) {
+    //         Ok(_) => self.handle_line(input.clone()),
+    //         Err(e) => println!("{}", e),
+    //     }
+    // }
+    //
+    // fn handle_line(&mut self, line: String) {
+    //     self.new_tokens = Vec::<Token>::new();
+    //     for c in line.chars() {
+    //         self.push_char(c);
+    //     }
+    // }
 
-    fn handle_line(&mut self, line: String) {
-        self.new_tokens = Vec::<Token>::new();
-        for c in line.chars() {
-            self.push_char(c);
-        }
-    }
-
+    /// Pushes a single character into the scanner. The scanner attempts to create a token
+    /// with the character but is not required to.
     fn push_char(&mut self, c: char) {
         // Push the char to the builder and get the results (Option<Token>, pushback?)
         let (token, pushback) = self.token_builder.push_char(c);
@@ -130,7 +136,7 @@ impl Scanner {
         }
     }
 
-    // Increments the line and column states based on the input
+    /// Increments the line and column states based on the input character.
     fn increment(&mut self, c: char) {
         if c == '\n' {
             self.column_number = 1;
@@ -140,7 +146,7 @@ impl Scanner {
         }
     }
 
-    // Pushes the token onto the list and prints it
+    /// Pushes the token onto the list.
     fn push_token(&mut self, t: Token) {
         // Comment this line to stop printing tokens when they are generated
         let debug = false;
@@ -148,8 +154,6 @@ impl Scanner {
             println!("<YASLC/lexer> Generated token: {}", t);
         }
 
-
-        // Push the token to the vector
         self.new_tokens.push(t.clone());
         self.tokens.push(t);
     }

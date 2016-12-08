@@ -1,7 +1,9 @@
+/// parser/mod.rs
 ///
 /// The parser module is responsible for syntax parsing of a set of compiler tokens
-/// using an LL(1) parser.
+/// using an LL(1) parser, as well as using the expression submodule to parse expressions.
 ///
+/// The parser generates code for the final output file.
 
 pub mod symbol;
 mod expression;
@@ -9,15 +11,12 @@ mod file_generator;
 
 pub use super::lexer::{Token, TokenType, KeywordType};
 
-use std::cmp::Ordering;
-
-use std::fmt;
-
 #[allow(unused_imports)]
 pub use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
 use self::file_generator::file_from;
 use self::expression::ExpressionParser;
 
+/// Set true if you want the parser to log all its progress, false otherwise.
 static mut VERBOSE: bool = true;
 
 macro_rules! log {
@@ -30,6 +29,8 @@ macro_rules! log {
     };
 }
 
+/// A macro to check the token and invoke closures based on the success or error
+/// of the token check.
 macro_rules! c_token {
     // Checks and returns unexpected if it was unexpected
     ($_self:expr, $t:expr) => {
@@ -56,6 +57,7 @@ macro_rules! c_token {
     };
 }
 
+/// A macro to check an expression and call optional closures for fail and success cases.
 macro_rules! c_exp {
     // Checks and returns unexpected if it was unexpected
     ($e:expr) => {
@@ -84,37 +86,38 @@ macro_rules! c_exp {
 
 #[allow(dead_code)]
 
-/// The Parser struct can check syntax for a set of tokens for validity.
+/// The Parser struct can check syntax for a set of tokens for validity as well as generate
+/// the final code for them.
 pub struct Parser {
-    // The set of tokens
+    /// The set of tokens for this Parser.
     tokens: Vec<Token>,
 
-    // The last expression stack from the evaluated expression
+    /// The last expression stack from the evaluated expression.
     e_parser: Option<ExpressionParser>,
 
-    // The last popped token
+    /// The last popped token.
     last_token: Option<Token>,
 
-    /// The symbol table associated with this parser
+    /// The symbol table associated with this parser.
     symbol_table: SymbolTable,
 
-    /// The stack of tokens used with the expression parser
+    /// The stack of tokens used with the expression parser.
     stack: Vec<Token>,
 
-    // The vector of strings for output to the file
+    /// The vector of strings for output to the file.
     commands: Vec<String>,
 
-    // A vector of declarations for output to the file
+    /// A vector of declarations for output to the file.
     declarations: Vec<String>,
 }
 
-/*
- *  The parser is implemented with some convenience functions for many rules. However,
- *  some rules still have to checked "manually." For any rule that can be accessed from a
- *  rule that can go to empty, you must check the first token to make sure you're in the
- *  correct rule.
- */
+/// The parser is implemented with some convenience functions for many rules. However,
+/// some rules still have to checked "manually." For any rule that can be accessed from a
+/// rule that can go to empty, you must check the first token to make sure you're in the
+/// correct rule.
 impl Parser {
+
+    /// Returns a new parser given the input tokens.
     pub fn new_with_tokens(tokens: Vec<Token>) -> Parser {
         Parser {
             tokens: tokens,
@@ -133,17 +136,23 @@ impl Parser {
         }
     }
 
-    /**
-     * Start parsing the input tokens
-     */
+    /// Starts to parse on the set of input tokens.
     pub fn parse(&mut self) {
         match self.program() {
             ParserState::Done(r) => {
                 match r {
                     ParserResult::Success => {
                         println!("<YASLC/Parser> Correctly parsed YASL program file.");
-                        file_from(self.commands.clone(), self.declarations.clone());
+                        match file_from(self.commands.clone(), self.declarations.clone()) {
+                            Ok(f) => {
+                                log!("<YASLC/Parser> Successfully wrote file {:?}!", f);
+                            },
+                            Err(e) => {
+                                log!("<YASLC/Parser> Error writing file: {:?}", e);
+                            },
+                        };
                     },
+                    // It was not a success, figure out what went wrong.
                     _ => {
                         // Get the error token
                         if let Some(t) = self.last_token() {
@@ -165,7 +174,7 @@ impl Parser {
         }
     }
 
-    // Pops the front token off the stack of tokens and returns it.
+    /// Pops the front token off the stack of tokens and returns it.
     fn next_token(&mut self) -> Token {
         let t = self.tokens.remove(0);
 
@@ -174,12 +183,12 @@ impl Parser {
         t
     }
 
-    /// Returns a copy of the last token popped
+    /// Returns a copy of the last token popped.
     fn last_token(&mut self) -> Option<Token> {
         self.last_token.clone()
     }
 
-    /// Inserts the last token into the token set
+    /// Inserts the last token popped into the token set.
     fn insert_last_token(&mut self) {
         if let Some(a) = self.last_token() {
             self.tokens.insert(0, a);
@@ -189,8 +198,8 @@ impl Parser {
         }
     }
 
-    // Checks the next token for the token type t and returns the parser state (continue or done)
-    // based on the input
+    /// Checks the next token for the token type t and returns the parser state (continue or done)
+    /// based on the input.
     fn check(&mut self, t: TokenType) -> ParserState {
         let token = self.next_token();
 
@@ -200,6 +209,8 @@ impl Parser {
         self.check_token(t, token)
     }
 
+    /// Checks if the token is the correct type and returns Continue if it is, Unexpected token
+    /// otherwise.
     fn check_token(&mut self, t: TokenType, token: Token) -> ParserState {
         match token.is_type(t) {
             true => ParserState::Continue,
@@ -207,8 +218,8 @@ impl Parser {
         }
     }
 
-    // Checks the token for the first token type t1. If it fails it checks the token for type t2.
-    // Returns success if either is the type of token.
+    //. Checks the token for the first token type t1. If it fails it checks the token for type t2.
+    //. Returns success if either is the type of token.
     fn check_and_then_check(&mut self, t1: TokenType, t2: TokenType)
         -> (ParserState, Option<TokenType>) {
         match self.check(t1.clone()) {
@@ -220,6 +231,7 @@ impl Parser {
         }
     }
 
+    /// Adds the string command to the list of commands.
     fn add_command(&mut self, command: &str) {
         let s = self.commands.len();
         if s > 0 {
@@ -241,16 +253,19 @@ impl Parser {
         }
     }
 
+    /// Adds the print command, which is a series of single character outputs.
     fn add_print_command(&mut self, print_message: &str) {
         let mut i = 0;
         for c in print_message.chars() {
             if i != 0 && i != print_message.len()-1 {
+                // TODO: Treat non-alphabet characters special
                 self.add_command(&*format!("outb ^{}", c));
             }
             i += 1;
         }
     }
 
+    /// Adds the declaration to the declaraction list
     fn add_declaration(&mut self, declaration: &str, size: u32) {
         self.declarations.push(format!("${} #{}", declaration, size));
     }
@@ -893,48 +908,26 @@ impl Parser {
             }
         }
     }
-
-    // fn parse_expression_stack(&mut self, expression_stack: ExpressionStack, t: Token) -> ParserState {
-    //     if expression_stack.is_valid() == true {
-    //         self.tokens.insert(0, t);
-    //         log!("<YASLC/Parser> Successfully exiting EXPRESSION rule because the expression stack is valid.");
-    //         for t in expression_stack.left_over {
-    //             self.tokens.insert(0, t);
-    //         }
-    //
-    //         if expression_stack..commands.len() == 0 {
-    //
-    //         } else {
-    //             for c in expression_stack.commands {
-    //                 self.add_command(&*c);
-    //             }
-    //         }
-    //
-    //
-    //         return ParserState::Continue;
-    //     } else {
-    //         log!("<YASLC/Parser> Exiting EXPRESSION rule because the expression stack is invalid!");
-    //         return ParserState::Done(ParserResult::Unexpected);
-    //     }
-    // }
-
-
 }
 
+/// The state of the parser, whether it should continue or if it is done and has a result.
 enum ParserState {
-    // The parser should continue and has the token
+    /// The parser should continue and is expecting more tokens.
     Continue,
 
-    // The parser has finished and is returning the result
+    /// The parser has finished and is returning the result.
     Done(ParserResult)
 }
 
+/// The result of a finished parser.
 enum ParserResult {
-    // The parser should continue parsing starting with the next token
+    /// The parser should continue parsing starting with the next token.
     Success,
 
+    /// The parser found the incorrect token but it is not unexpected and should be pushed
+    /// back onto the stack and try with a different rule.
     Incorrect,
 
-    // The parser reached an unexpected token, should return an error and stop
+    // The parser reached an unexpected token, should return an error and stop.
     Unexpected,
 }

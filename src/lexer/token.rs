@@ -1,14 +1,11 @@
-/*
- * Token.rs
- *
- * Thomas Ring
- * August 30, 2016
- * token.rs
- *
- */
+/// lexer/token.rs
+///
+/// The token module contains all code for tokens storage as well as functionality with
+/// the TokenBuilder to have a state machine which can create tokens based on input.
 
 use std::fmt;
 
+/// TokenType represents all the different types of tokens that can be used in YASL.
 #[derive(Clone, PartialEq)]
 pub enum TokenType {
     // Identifier
@@ -89,6 +86,7 @@ impl fmt::Display for TokenType {
     }
 }
 
+/// KeywordType is an enum subset of TokenType used to store all the types of keywords.
 #[derive(Clone, PartialEq)]
 pub enum KeywordType {
     Program,
@@ -145,15 +143,24 @@ impl fmt::Display for KeywordType {
     }
 }
 
+/// Token is used to store information about a single token.
 #[derive(Clone, PartialEq)]
 pub struct Token {
+    /// The type of token.
     token_type: TokenType,
+
+    /// The line where the token starts.
     line: u32,
+
+    /// The column where the token starts.
     column: u32,
+
+    /// The lexeme associated with this token.
     lexeme: String
 }
 
 impl Token {
+    /// Returns an empty, placeholder token.
     pub fn new() -> Token {
         Token {
             // Just testing, remove this before doing TODO
@@ -164,38 +171,47 @@ impl Token {
         }
     }
 
+    /// Returns the token_type for this token.
     pub fn token_type(&self) -> TokenType {
         self.token_type.clone()
     }
 
+    /// Sets the token_type for this token.
     pub fn set_token_type(&mut self, t: TokenType) {
         self.token_type = t;
     }
 
+    /// Returns true if the token is of type t, false otherwise
     pub fn is_type(&self, t: TokenType) -> bool {
         self.token_type == t
     }
 
+    /// Returns the lexeme associated with this token.
     pub fn lexeme(&self) -> String {
         self.lexeme.clone()
     }
 
+    /// Sets the lexeme associated with this token.
     pub fn set_lexeme(&mut self, l: String) {
         self.lexeme = l;
     }
 
+    /// Returns the line number for this token.
     pub fn line(&self) -> u32 {
         self.line
     }
 
+    /// Sets the line number for this token.
     pub fn set_line(&mut self, line: u32) {
         self.line = line;
     }
 
+    /// Returns the column number for this token.
     pub fn column(&self) -> u32 {
         self.column
     }
 
+    /// Sets the column number for this token.
     pub fn set_column(&mut self, column: u32) {
         self.column = column;
     }
@@ -207,15 +223,26 @@ impl fmt::Display for Token {
     }
 }
 
+/// TokenBuilder uses TokenState to push characters and returns tokens when they are
+/// appropriately generated.
 pub struct TokenBuilder {
+    /// The current token builder state.
     token_state: TokenState,
 
+    /// The starting line number for the current token.
     line: u32,
+
+    /// The starting column number for the current token.
     column: u32,
+
+    /// The current lexeme for the token.
+    ///
+    /// This is pushed onto as characters are input.
     lexeme: String,
 }
 
 impl TokenBuilder {
+    /// Returns a new TokenBuilder given the line and column, initializing the state at Start.
     pub fn new(column: u32, line: u32) -> TokenBuilder {
         TokenBuilder {
             line: line,
@@ -227,6 +254,7 @@ impl TokenBuilder {
         }
     }
 
+    /// Returns true if the TokenBuilder is at the start state, false otherwise.
     pub fn is_start(&self) -> bool {
         match self.token_state {
             TokenState::Start => true,
@@ -234,8 +262,9 @@ impl TokenBuilder {
         }
     }
 
-    // Takes a character and pushes it to the lexeme and advances the state,
-    // returns true if it reaches a final (accepting or invalid) state
+    /// Takes a character and pushes it to the lexeme and advances the state,
+    /// returns true if it reaches a final (accepting or invalid) state as well as
+    /// Some(t) where t is the generated token.
     pub fn push_char(&mut self, c: char) -> (Option<Token>, bool) {
         // Advance the state based on the character
         self.token_state = self.token_state.next_state(c);
@@ -304,6 +333,8 @@ impl TokenBuilder {
         (token, pushback)
     }
 
+    /// Returns the final type for tokens, useful for keywords that can not be identified until
+    /// they are completely finished.
     fn final_type(&self) -> TokenType {
         match self.token_state.clone() {
             TokenState::Accept(_, t) => {
@@ -322,6 +353,8 @@ impl TokenBuilder {
         }
     }
 
+    /// Returns the KeywordType given the input lexeme and returns Some(k) where k
+    /// is the final state if it is a keyword and None otherwise.
     fn keyword_for_token(&self, lexeme: &str) -> Option<KeywordType> {
         use self::KeywordType::*;
         match lexeme {
@@ -351,15 +384,18 @@ impl TokenBuilder {
         }
     }
 
-    // Consumption setter functions
+    /// Returns the line where the current token started.
     pub fn line(&mut self, line: u32) {
         self.line = line;
     }
 
+    /// Returns the column where the current column started.
     pub fn column(&mut self, column: u32) {
         self.column = column;
     }
 
+    /// Returns the current lexeme for this token builder.
+    #[allow(dead_code)]
     pub fn lexeme(&mut self, lexeme: String) {
         self.lexeme = lexeme;
     }
@@ -368,6 +404,10 @@ impl TokenBuilder {
 /*
  * DFA code
  */
+
+ /// TokenState represents a single state in the DFA.
+ ///
+ /// TokenState also contains functionality to advance along the DFA while consuming itself.
  #[derive(Clone)]
 enum TokenState {
     Start, // 0
@@ -390,6 +430,8 @@ enum TokenState {
     Unaccepted,
 }
 
+/// Accepting actions for tokens, whether they should be accepted or if they should push the
+/// cursor back one character and accept the token. Useful when a token can not end itself.
 #[derive(Copy, Clone)]
 enum TokenAction {
     Accept,
@@ -397,6 +439,7 @@ enum TokenAction {
 }
 
 impl TokenState {
+    /// Returns the next state given the current state and the input character.
     fn next_state(&self, input: char) -> TokenState {
         match *self {
             // Starting state
