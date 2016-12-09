@@ -450,7 +450,11 @@ impl ExpressionParser {
                         TokenType::Minus => "subw",
                         TokenType::Star => "mulw",
                         TokenType::Keyword(KeywordType::Div) => "divw",
-                        _ => panic!("Unrecognized operator in expression!"),
+                        TokenType::Keyword(KeywordType::Mod) => {
+                            // TODO special case
+                            "divw"
+                        }
+                        n => panic!("Unrecognized operator '{}' in expression!", n),
                     };
 
                     let full_op = format!("{} +{}@R{} +{}@R{}", op, s2.offset(), s2.register(),

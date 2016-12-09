@@ -14,8 +14,8 @@ pub fn file_from(commands: Vec<String>, declarations: Vec<String>) -> io::Result
 
     for d in declarations {
         match f.write_fmt(format_args!("{}\n", d)) {
-            Ok(n) => {
-                println!("Successfully wrote {:?} bytes to file.", n);
+            Ok(_) => {
+                //println!("Successfully wrote {:?} bytes to file.", n);
             },
             Err(e) => {
                 println!("Error writing to file: {:?}!", e);
