@@ -131,6 +131,8 @@ impl SymbolTable {
         self.next_temp += 1;
         self.next_offset += 4;
 
+        self.add_symbol(s.clone());
+
         s
     }
 
@@ -148,7 +150,7 @@ impl SymbolTable {
         print!("Table: [");
 
         for s in self.symbols.iter() {
-            print!("{}", s.identifier);
+            print!("{}, ", s.identifier);
         }
 
         println!("]");
