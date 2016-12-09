@@ -197,6 +197,26 @@ fn e_parser_empty() {
 }
 
 #[test]
+#[should_panic]
+// test if just an operand fails parsing
+fn e_parser_operand() {
+    // Initialize the tokens
+    let mut tokens = Vec::new();
+    tokens.push(Token::new_with(0, 0, "+".to_string(), TokenType::Plus));
+
+    // Initialize the symbol table
+    let mut table = SymbolTable::empty();
+    for t in tokens.iter() {
+        if t.is_type(TokenType::Identifier) {
+            table.add(t.lexeme(), SymbolType::Variable(SymbolValueType::Int));
+        }
+    }
+
+    // Create the e_parser
+    assert!(ExpressionParser::new(table, tokens).is_some());
+}
+
+#[test]
 // Tests if the expression parser works with a single expression.
 fn e_parser_single() {
     // Initialize the tokens
