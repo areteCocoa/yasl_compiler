@@ -289,7 +289,7 @@ pub struct ExpressionParser {
 impl ExpressionParser {
     /// Creates a new ExpressionParser given the tokens and parses through them. It returns
     /// Some(e) where e is a valid expression parser if there is no error and None otherwise.
-    pub fn new(mut table: SymbolTable, tokens: Vec<Token>) -> Option<ExpressionParser> {
+    pub fn new(table: SymbolTable, tokens: Vec<Token>) -> Option<ExpressionParser> {
         // Convert the tokens into expressions
         let expressions = match ExpressionParser::tokens_to_expressions(tokens) {
             Some(e) => e,
@@ -297,12 +297,11 @@ impl ExpressionParser {
         };
 
         // Convert infix notation to reverse polish notation
-        let mut postfix_exp = match ExpressionParser::expressions_to_postfix(expressions) {
+        let postfix_exp = match ExpressionParser::expressions_to_postfix(expressions) {
             Some(e) => e,
             None => return None,
         };
 
-        // TODO: call reduce_expression_stack(mut expressions: Vec<Expression>, table: SymbolTable)
         let (f_symbol_opt, mut commands) = ExpressionParser::reduce_expression_stack(postfix_exp, table);
 
         let f_symbol = match f_symbol_opt {
@@ -338,145 +337,41 @@ impl ExpressionParser {
             // Pop the first expression
             let e = expressions.remove(0);
 
-            // Figure out what the expression
-            match e.clone() {
-                // The expression is an operand but may be an identifier (variable)
-                // or a constant number
-                Expression::Operand(t) => {
-                    // Check if it an identifier or constant number
-                    if t.is_type(TokenType::Identifier) {
-                        // Check that the variable has been declared
-                        if let Some(s) = table.get(&*t.lexeme()) {
-                            match s.symbol_type {
-                                SymbolType::Procedure => {
-                                    // We can't use procedures in expressions, fail
-                                    panic!("Attempted to use a procedure as a variable in an expression!");
-                                }
-                                _ => {}
-                            }
-                            // Push the operand to the stack
-                            stack.push(e);
-                        } else {
-                            panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme());
-                        }
-                    } else {
-                        // It is a constant number, just push to the stack
-                        stack.push(e);
-                    }
-
-                },
-
-                // The expression is an operator, we need to pop two operands and reduce them
-                // to Expression::Combined.
-                //
-                // NOTE: This does not check for ordering because it is assumed the list of
-                // expressions is already in postfix order.
-                Expression::Operator(t_type) => {
-                    // Pop the previous two expressions and combine them
-                    let e1 = match stack.pop() {
-                        Some(s) => s,
-                        None => {
-                            println!("<YASLC/ExpressionParser> Error: attempted to reduce expression but
-                            there is a missing operand!");
-                            return (None, commands);
-                        }
-                    };
-                    let e2 = match stack.pop() {
-                        Some(s) => s,
-                        None => {
-                            println!("<YASLC/ExpressionParser> Error: attempted to reduce expression but
-                            there is a missing operand!");
-                            return (None, commands);
-                        }
-                    };
-
-                    // Get the temporary symbol from the symbol table
-                    let temp = table.temp().clone();
-
-                    // Get the symbols for the two operands
-                    let s1 = match e1 {
-                        Expression::Operand(t) => {
-                            // If it is a variable we need to check the table, otherwise use a temp
-                            match t.is_type(TokenType::Identifier) {
-                                true => {
-                                    match table.get(&*t.lexeme()) {
-                                        Some(x) => x.clone(),
-                                        None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
-                                    }
-                                },
-                                false => {
-                                    // TODO: Generate the "value code" for a constant number
-                                    let temp = table.temp();
-                                    temp
-                                }
-                            }
-
-                        },
-                        Expression::Combined(s) => s,
-                        _ => {
-                            panic!("Found an operator where we were expecting an operand!");
-                        }
-                    };
-                    let s2 = match e2 {
-                        Expression::Operand(t) => {
-                            match t.is_type(TokenType::Identifier) {
-                                true => {
-                                    match table.get(&*t.lexeme()) {
-                                        Some(x) => x.clone(),
-                                        None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
-                                    }
-                                },
-                                false => {
-                                    // TODO: Generate the "value code" for a constant number
-                                    let temp = table.temp();
-                                    temp
-                                }
+            match ExpressionParser::handle_expression(e, &mut table, &mut stack) {
+                Ok(opt_com) => match opt_com {
+                        Some(coms) => {
+                            for com in coms {
+                                commands.push(com);
                             }
                         },
-                        Expression::Combined(s) => s,
-                        _ => {
-                            panic!("Found an operator where we were expecting an operand!");
-                        }
-                    };
-
-                    // Create the output for the evaluation using the temp symbol
-                    //  - Move the first variable to the temp location
-                    let mov = format!("movw +{}@R{} +{}@R{}", s1.offset(), s1.register(),
-                        temp.offset(), temp.register());
-
-                    //  - Figure out the operation command
-                    let op = match t_type {
-                        TokenType::Plus => "addw",
-                        TokenType::Minus => "subw",
-                        TokenType::Star => "mulw",
-                        TokenType::Keyword(KeywordType::Div) => "divw",
-                        TokenType::Keyword(KeywordType::Mod) => {
-                            // TODO special case
-                            "divw"
-                        }
-                        n => panic!("Unrecognized operator '{}' in expression!", n),
-                    };
-
-                    let full_op = format!("{} +{}@R{} +{}@R{}", op, s2.offset(), s2.register(),
-                        temp.offset(), temp.register());
-
-                    commands.push(mov);
-                    commands.push(full_op);
-
-                    // Create the combination expression
-                    let c = Expression::Combined(temp.clone());
-
-                    // Push the combination expression to the stack
-                    stack.push(c);
-                },
-                Expression::Combined(_) => {
-                    stack.push(e);
+                        None => {},
+                    },
+                Err(error) => {
+                    panic!("<YASLC/ExpressionParser> Error handling expression: {}", error);
                 }
-            }
+            };
+
         }
 
-        let f_symbol = match stack.remove(0) {
-            Expression::Combined(s) => s,
+        let f_symbol = match ExpressionParser::final_symbol(stack, table) {
+            (Some(s), coms) => {
+                for com in coms {
+                    commands.push(com);
+                }
+                s
+            },
+            _ => {
+                // TODO: Write something real
+                panic!("UNEXPECTED RESULT");
+            }
+        };
+
+        (Some(f_symbol), commands)
+    }
+
+    fn final_symbol(mut stack: Vec<Expression>, mut table: SymbolTable) -> (Option<Symbol>, Vec<String>) {
+        match stack.remove(0) {
+            Expression::Combined(s) => (Some(s), Vec::<String>::new()),
             Expression::Operand(t) => {
                 // It is a single operand
                 match t.is_type(TokenType::Identifier) {
@@ -485,27 +380,178 @@ impl ExpressionParser {
                             Some(s) => s,
                             None => {
                                 panic!("<YASLC/ExpressionParser> Attempted to use a symbol that
-                                was not found in the symbol table! This is very unexpected.");
+                                was not found in the symbol table! This is very unexpected...");
                             }
                         };
-                        symbol.clone()
+                        (Some(symbol.clone()), Vec::<String>::new())
                     },
                     false => {
                         // TODO: Do we push the number to the stack as a temp?
                         let s = table.temp();
                         // TODO: Is the correct format for constants "^"?
                         let c = format!("movw ^{} +{}@R{}", t.lexeme(), s.offset(), s.register());
+                        let mut commands = Vec::<String>::new();
                         commands.push(c);
-                        s.clone()
+                        (Some(s.clone()), commands)
                     }
                 }
             }
             _ => {
                 panic!("Found expression consisting of only an operator!");
             }
-        };
+        }
+    }
 
-        (Some(f_symbol), commands)
+    fn last_two_expressions(stack: &mut Vec<Expression>) -> Result<(Expression, Expression), String> {
+        let e1 = match stack.pop() {
+            Some(s) => s,
+            None => {
+                return Err(format!("<YASLC/ExpressionParser> Error: attempted to reduce expression but there is a missing operand!"));
+            }
+        };
+        let e2 = match stack.pop() {
+            Some(s) => s,
+            None => {
+                return Err(format!("<YASLC/ExpressionParser> Error: attempted to reduce expression but there are two missing operands!"));
+            }
+        };
+        Ok((e1, e2))
+    }
+
+    /// Determines what the expression is and whether it should be inserted to the symbol table
+    /// and/or stack as well as whether reduction should happen.
+    /// TODO: Reduce this function call
+    fn handle_expression(e: Expression, table: &mut SymbolTable, mut stack: &mut Vec<Expression>) -> Result<Option<Vec<String>>, String> {
+        // Figure out what the expression
+        match e.clone() {
+            // The expression is an operand but may be an identifier (variable)
+            // or a constant number
+            Expression::Operand(t) => {
+                // Check if it an identifier or constant number
+                if t.is_type(TokenType::Identifier) {
+                    // Check that the variable has been declared
+                    if let Some(s) = table.get(&*t.lexeme()) {
+                        match s.symbol_type {
+                            SymbolType::Procedure => {
+                                // Fail, we can't use procedures in expressions
+                                panic!("Attempted to use a procedure as a variable in an expression!");
+                            }
+                            _ => {}
+                        }
+                        // Success, push the operand to the stack
+                        stack.push(e);
+                        return Ok(None);
+                    } else {
+                        panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme());
+                    }
+                } else {
+                    // It is a constant number, just push to the stack
+                    stack.push(e);
+                    return Ok(None);
+                }
+
+            },
+
+            // The expression is an operator, we need to pop two operands and reduce them
+            // to Expression::Combined.
+            //
+            // NOTE: This does not check for ordering because it is assumed the list of
+            // expressions is already in postfix order.
+            Expression::Operator(t_type) => {
+                // Pop the previous two expressions and combine them
+                let (e1, e2) = match ExpressionParser::last_two_expressions(&mut stack) {
+                    Ok((r1, r2)) => (r1, r2),
+                    Err(e) => panic!("<YASLC/ExpresionParser> {}", e),
+                };
+
+                // Get the temporary symbol from the symbol table
+                let temp = table.temp().clone();
+
+                // Get the symbols for the two operands
+                let s1 = match e1 {
+                    Expression::Operand(t) => {
+                        // If it is a variable we need to check the table, otherwise use a temp
+                        match t.is_type(TokenType::Identifier) {
+                            true => {
+                                match table.get(&*t.lexeme()) {
+                                    Some(x) => x.clone(),
+                                    None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
+                                }
+                            },
+                            false => {
+                                // TODO: Generate the "value code" for a constant number
+                                let temp = table.temp();
+                                temp
+                            }
+                        }
+
+                    },
+                    Expression::Combined(s) => s,
+                    _ => {
+                        panic!("Found an operator where we were expecting an operand!");
+                    }
+                };
+                let s2 = match e2 {
+                    Expression::Operand(t) => {
+                        match t.is_type(TokenType::Identifier) {
+                            true => {
+                                match table.get(&*t.lexeme()) {
+                                    Some(x) => x.clone(),
+                                    None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
+                                }
+                            },
+                            false => {
+                                // TODO: Generate the "value code" for a constant number
+                                let temp = table.temp();
+                                temp
+                            }
+                        }
+                    },
+                    Expression::Combined(s) => s,
+                    _ => {
+                        panic!("Found an operator where we were expecting an operand!");
+                    }
+                };
+
+                // Create the output for the evaluation using the temp symbol
+                //  - Move the first variable to the temp location
+                let mov = format!("movw +{}@R{} +{}@R{}", s1.offset(), s1.register(),
+                    temp.offset(), temp.register());
+
+                //  - Figure out the operation command
+                let op = match t_type {
+                    TokenType::Plus => "addw",
+                    TokenType::Minus => "subw",
+                    TokenType::Star => "mulw",
+                    TokenType::Keyword(KeywordType::Div) => "divw",
+                    TokenType::Keyword(KeywordType::Mod) => {
+                        // TODO special case
+                        "divw"
+                    }
+                    n => panic!("Unrecognized operator '{}' in expression!", n),
+                };
+
+                let full_op = format!("{} +{}@R{} +{}@R{}", op, s2.offset(), s2.register(),
+                    temp.offset(), temp.register());
+
+                let mut commands = Vec::<String>::new();
+
+                commands.push(mov);
+                commands.push(full_op);
+
+                // Create the combination expression
+                let c = Expression::Combined(temp.clone());
+
+                // Push the combination expression to the stack
+                stack.push(c);
+
+                Ok(Some(commands))
+            },
+            Expression::Combined(_) => {
+                stack.push(e);
+                Ok(None)
+            }
+        }
     }
 
     /// Converts the vector of tokens to a vector of expressions and returns None if there was an
