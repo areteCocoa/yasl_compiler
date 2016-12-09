@@ -3,8 +3,11 @@
 /// The expression module contains the expression parser and all the implementation
 /// for the expression parser.
 
-use super::{Token, TokenType, KeywordType};
-use super::{Symbol, SymbolTable, SymbolType, SymbolValueType};
+#[cfg(test)]
+mod tests;
+
+pub use super::{Token, TokenType, KeywordType};
+pub use super::{Symbol, SymbolTable, SymbolType, SymbolValueType};
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -186,117 +189,6 @@ impl fmt::Display for Expression {
             }
         }
     }
-}
-
-#[test]
-#[should_panic]
-// test if the expression parser works with empty expression (it should panic)
-fn e_parser_empty() {
-    let tokens = Vec::new();
-    assert!(ExpressionParser::new(SymbolTable::empty(), tokens).is_none())
-}
-
-#[test]
-#[should_panic]
-// test if just an operand fails parsing
-fn e_parser_operand() {
-    // Initialize the tokens
-    let mut tokens = Vec::new();
-    tokens.push(Token::new_with(0, 0, "+".to_string(), TokenType::Plus));
-
-    // Initialize the symbol table
-    let mut table = SymbolTable::empty();
-    for t in tokens.iter() {
-        if t.is_type(TokenType::Identifier) {
-            table.add(t.lexeme(), SymbolType::Variable(SymbolValueType::Int));
-        }
-    }
-
-    // Create the e_parser
-    assert!(ExpressionParser::new(table, tokens).is_some());
-}
-
-#[test]
-// Tests if the expression parser works with a single expression.
-fn e_parser_single() {
-    // Initialize the tokens
-    let mut tokens = Vec::new();
-    tokens.push(Token::new_with(0, 0, "5".to_string(), TokenType::Number));
-
-    // Initialize the symbol table
-    let mut table = SymbolTable::empty();
-    for t in tokens.iter() {
-        if t.is_type(TokenType::Identifier) {
-            table.add(t.lexeme(), SymbolType::Variable(SymbolValueType::Int));
-        }
-    }
-
-    // Create the e_parser
-    assert!(ExpressionParser::new(table, tokens).is_some());
-}
-
-#[test]
-#[should_panic]
-// Tests if the expression parser fails when there is an incomplete expression
-fn e_parser_two_incomplete() {
-    // Initialize the tokens
-    let mut tokens = Vec::new();
-    tokens.push(Token::new_with(0, 0, "5".to_string(), TokenType::Number));
-    tokens.push(Token::new_with(0, 0, "+".to_string(), TokenType::Plus));
-
-    // Initialize the symbol table
-    let mut table = SymbolTable::empty();
-    for t in tokens.iter() {
-        if t.is_type(TokenType::Identifier) {
-            table.add(t.lexeme(), SymbolType::Variable(SymbolValueType::Int));
-        }
-    }
-
-    // Create the e_parser
-    assert!(ExpressionParser::new(table, tokens).is_some());
-}
-
-#[test]
-// Tests if the expression parser can handle two values and an operator
-fn e_parser_two() {
-    // Initialize the tokens
-    let mut tokens = Vec::new();
-    tokens.push(Token::new_with(0, 0, "5".to_string(), TokenType::Number));
-    tokens.push(Token::new_with(0, 0, "+".to_string(), TokenType::Plus));
-    tokens.push(Token::new_with(0, 0, "7".to_string(), TokenType::Number));
-
-    // Initialize the symbol table
-    let mut table = SymbolTable::empty();
-    for t in tokens.iter() {
-        if t.is_type(TokenType::Identifier) {
-            table.add(t.lexeme(), SymbolType::Variable(SymbolValueType::Int));
-        }
-    }
-
-    // Create the e_parser
-    assert!(ExpressionParser::new(table, tokens).is_some());
-}
-
-#[test]
-fn e_parser_identifier() {
-    // Initialize the tokens
-    let mut tokens = Vec::new();
-    tokens.push(Token::new_with(0, 0, "5".to_string(), TokenType::Number));
-    tokens.push(Token::new_with(0, 0, "+".to_string(), TokenType::Plus));
-    tokens.push(Token::new_with(0, 0, "7".to_string(), TokenType::Number));
-    tokens.push(Token::new_with(0, 0, "*".to_string(), TokenType::Star));
-    tokens.push(Token::new_with(0, 0, "x".to_string(), TokenType::Identifier));
-
-    // Initialize the symbol table
-    let mut table = SymbolTable::empty();
-    for t in tokens.iter() {
-        if t.is_type(TokenType::Identifier) {
-            table.add(t.lexeme(), SymbolType::Variable(SymbolValueType::Int));
-        }
-    }
-
-    // Create the e_parser
-    assert!(ExpressionParser::new(table, tokens).is_some());
 }
 
 /// ExpressionParser validates the syntax of an expression as well as reduces it and
