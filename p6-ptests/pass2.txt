@@ -1,0 +1,11 @@
+program demo;
+
+// II. Boolean evaluation
+
+var y : bool;
+var x : bool;
+begin
+  x = true;
+  x = false;
+  y = 5 < 4
+end.

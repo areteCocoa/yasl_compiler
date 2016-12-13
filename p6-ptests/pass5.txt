@@ -1,0 +1,10 @@
+program demo;
+
+// V. Begin and end statements
+
+var y : bool;
+var x : int;
+begin
+  y = 5 < 4;
+  x = 5;
+end.

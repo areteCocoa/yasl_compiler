@@ -1,0 +1,11 @@
+program demo;
+
+// VI. Simple procedure code generation
+
+proc foo
+  begin
+    print "foo was called!"
+  end.
+begin
+  foo()
+end.

@@ -1,0 +1,15 @@
+program demo;
+
+// IV. If Statements
+
+var y : int;
+begin
+  y = 5;
+  if (y > 6) then
+    print "This should never print!"
+  end;
+
+  if y < 6
+    print "This should always print!"
+  end
+end.

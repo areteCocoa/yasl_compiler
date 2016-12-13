@@ -1,0 +1,20 @@
+program demo;
+
+// VIII. Procedure code generation with variables and parameters
+
+const x = bool;
+const z = 5;
+
+proc foo(y)
+  var x : int;
+  begin
+    x = 5 + y
+    print x
+  end.
+
+begin
+  x = true;
+  if (x) then
+    foo(5)
+  end
+end.

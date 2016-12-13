@@ -1,0 +1,31 @@
+program pass10;
+
+// X. Nested procedure code generation
+
+const x = 7;
+
+proc one(t)
+
+  var i : int;
+  var x : bool;
+
+  proc two(tt)
+    const x = false;
+    begin
+      if tt mod 2 == 0 then
+        print tt
+      end
+    end
+  begin
+    i = 0;
+    while i < t do
+      two(i)
+      i = i + 1
+    end
+  end
+
+begin
+  one(x)
+  one(20)
+  one(x * 10)
+end.

@@ -1,0 +1,20 @@
+program demo;
+
+// IX. Procedures with recursion
+
+var y : int;
+const can_run = bool;
+
+proc fib(n)
+  var x : int;
+  begin
+    if (n == 0) then
+      // Can return a value?
+  end.
+
+begin
+  x = true;
+  if (x) then
+    foo()
+  end
+end.

@@ -16,7 +16,7 @@ use self::file_generator::file_from;
 use self::expression::ExpressionParser;
 
 /// Set true if you want the parser to log all its progress, false otherwise.
-static mut VERBOSE: bool = true;
+static mut VERBOSE: bool = false;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {
@@ -99,7 +99,7 @@ pub struct Parser {
     symbol_table: SymbolTable,
 
     /// The stack of tokens used with the expression parser.
-    stack: Vec<Token>,
+    //stack: Vec<Token>,
 
     /// The vector of strings for output to the file.
     commands: Vec<String>,
@@ -125,7 +125,7 @@ impl Parser {
 
             symbol_table: SymbolTable::empty(),
 
-            stack: Vec::<Token>::new(),
+            //stack: Vec::<Token>::new(),
 
             commands: Vec::<String>::new(),
 
@@ -134,7 +134,7 @@ impl Parser {
     }
 
     /// Starts to parse on the set of input tokens.
-    pub fn parse(&mut self) {
+    pub fn parse(&mut self) -> ParserResult {
         match self.program() {
             ParserState::Done(r) => {
                 match r {
@@ -169,6 +169,8 @@ impl Parser {
                                 log!("<YASLC/Parser> Error writing file: {:?}", e);
                             },
                         };
+
+                        return ParserResult::Success;
                     },
                     // It was not a success, figure out what went wrong.
                     _ => {
@@ -178,6 +180,7 @@ impl Parser {
                         } else {
                             println!("<YASC/Parser> Internal error: Could not find the error token, we don't know what went wrong.");
                         }
+                        return ParserResult::Unexpected;
                     }
                 }
             }
@@ -188,6 +191,7 @@ impl Parser {
                 } else {
                     println!("<YASC/Parser> Unexpected end of file. No token found, we don't know what went wrong.");
                 }
+                return ParserResult::Unexpected;
             }
         }
     }
@@ -990,7 +994,7 @@ enum ParserState {
 }
 
 /// The result of a finished parser.
-enum ParserResult {
+pub enum ParserResult {
     /// The parser should continue parsing starting with the next token.
     Success,
 
