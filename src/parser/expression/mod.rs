@@ -278,8 +278,8 @@ impl ExpressionParser {
                 s
             },
             _ => {
-                // TODO: Write something real
-                panic!("UNEXPECTED RESULT");
+                println!("<YASLC/ExpressionParser> Error: Expected to find final symbol in expression parser but none was found!");
+                return (None, commands);
             }
         };
 
@@ -304,8 +304,9 @@ impl ExpressionParser {
                         (Some(symbol.clone()), Vec::<String>::new())
                     },
                     // It is a number and we can use it literally
+                    // For continuity we will push it as a temp variable so we can use
+                    // it as a symbol to get all the code support for symbol arithmatic
                     false => {
-                        // TODO: Do we push the number to the stack as a temp?
                         let s = table.temp();
                         // TODO: Is the correct format for constants "^"?
                         let c = format!("movw ^{} +{}@R{}", t.lexeme(), s.offset(), s.register());

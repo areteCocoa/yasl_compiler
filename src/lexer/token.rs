@@ -163,7 +163,6 @@ impl Token {
     /// Returns an empty, placeholder token.
     pub fn new() -> Token {
         Token {
-            // Just testing, remove this before doing TODO
             line: 0,
             column: 0,
             lexeme: "".to_string(),

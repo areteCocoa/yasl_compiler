@@ -31,7 +31,7 @@ pub struct SymbolTable {
     old_table: Option<Box<SymbolTable>>,
 
     // A list of offsets per register
-    register_offsets: Vec<u32>,
+    register_saves: Vec<(u32, u32)>,
 
     register: u32,
 
@@ -46,7 +46,7 @@ impl SymbolTable {
         SymbolTable {
             symbols: Vec::<Symbol>::new(),
             old_table: None,
-            register_offsets: Vec::<u32>::new(),
+            register_saves: Vec::<(u32, u32)>::new(),
             register: 0,
             next_offset: 0,
             next_temp: 0,
@@ -66,7 +66,7 @@ impl SymbolTable {
         SymbolTable {
             symbols: Vec::<Symbol>::new(),
             old_table: Some(pointer_old),
-            register_offsets: Vec::<u32>::new(),
+            register_saves: Vec::<(u32, u32)>::new(),
             register: register,
             next_offset: n_o,
             next_temp: n_t,
@@ -152,15 +152,27 @@ impl SymbolTable {
     }
 
     pub fn up_register(&mut self) {
+        let prev = (self.next_offset, self.next_temp);
+        self.register_saves.push(prev);
+
         self.register += 1;
         self.next_offset = 0;
         self.next_temp = 0;
-        // TODO: Change offset and temp
     }
 
     pub fn down_register(&mut self) {
+        if self.register <= 0 {
+            panic!("<YASLC/SymbolTable> Internal error: attempted to move down a register when we were already at 0!");
+        }
         self.register -= 1;
-        // TODO: Go back to old offset and temp
+
+        match self.register_saves.pop() {
+            Some((offset, temp)) => {
+                self.next_offset = offset;
+                self.next_temp = temp;
+            },
+            None => panic!("<YASLC/SymbolTable> Tried to move down a register but we did not have save data for the previous register!"),
+        }
     }
 
     /// Resets the next_offset property.

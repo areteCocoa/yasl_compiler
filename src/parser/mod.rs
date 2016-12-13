@@ -244,7 +244,6 @@ impl Parser {
 
     /// Adds the string command to the list of commands.
     fn add_command(&mut self, command: &str) {
-        let s = self.commands.len();
         log!("<YASLC/Parser> Adding command to list of output: \'{}\'", command);
         self.commands.push(command.to_string());
     }
@@ -254,8 +253,17 @@ impl Parser {
         let mut i = 0;
         for c in print_message.chars() {
             if i != 0 && i != print_message.len()-1 {
-                // TODO: Treat non-alphabet characters special
-                self.add_command(&*format!("outb ^{}", c));
+                // TODO: What is the pre-symbol for literal non-alphabet characters?
+
+                // Check if it is a number
+                let com = if c.is_numeric() {
+                    // Add using ^
+                    format!("outb ^{}", c)
+                } else {
+                    format!("outb #{}", c as u8)
+                };
+
+                self.add_command(&*com);
             }
             i += 1;
         }
