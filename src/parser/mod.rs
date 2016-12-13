@@ -144,7 +144,17 @@ impl Parser {
                     ParserResult::Success => {
                         println!("<YASLC/Parser> Correctly parsed YASL program file.");
 
+                        // Get the number of declarations
+                        let n_decl = self.declarations.len();
+
+                        // Move the SP based on the number of declarations
+                        self.declarations.push(format!("movw ^{}, SP", n_decl * 4));
+
+                        // Create one list of commands
                         self.declarations.append(&mut self.commands);
+
+                        // "Fix" file with things that can be incorrect when assembling
+
                         // Fix the first command to start with $main
                         let first = match self.declarations.get(0) {
                             Some(s) => s.clone(),
@@ -340,49 +350,39 @@ impl Parser {
 
         c_token!(self, TokenType::Assign);
 
-        // TODO: Implement detecting value type based on lexeme
-        // let (t, _) = match self.check(TokenType::Number) {
-        //     ParserState::Continue => {
-        //         let l = self.last_token().unwrap();
-        //
-        //         match l.token_type() {
-        //             TokenType::Keyword(KeywordType::Int) => {
-        //                 let n = match l.lexeme().parse::<i32>() {
-        //                     Ok(x) => x,
-        //                     Err(_) => {
-        //                         println!("<YASLC/Parser> Token had type int but could not convert to digit!");
-        //                         return ParserState::Done(ParserResult::Unexpected);
-        //                     }
-        //                 };
-        //                 (SymbolValueType::Int, n)
-        //             },
-        //             TokenType::Keyword(KeywordType::Bool) => {
-        //                 match &*l.lexeme() {
-        //                     "true" => (SymbolValueType::Bool, 1),
-        //                     "false" => (SymbolValueType::Bool, 0),
-        //                     _ => {
-        //                         println!("<YASLC/Parser> Token had type int but could not convert to digit!");
-        //                         return ParserState::Done(ParserResult::Unexpected);
-        //                     }
-        //                 }
-        //             },
-        //             _ => {
-        //                 println!("Something bad happened.");
-        //                 return ParserState::Done(ParserResult::Unexpected);
-        //             }
-        //         }
-        //     },
-        //
-        // };
+        let (t, v) = match self.check(TokenType::Number) {
+            ParserState::Continue => {
+                let l = self.last_token().unwrap();
 
-        c_token!(self, TokenType::Number);
+                // If the lexeme is numeric it's a number, otherwise if its "true"/"false its a boolean"
+                // if its neither then crash
+                match l.lexeme().parse::<i32>() {
+                    Ok(n) => {
+                        // Its a number
+                        (SymbolValueType::Int, n)
+                    },
+                    Err(_) => {
+                        // It is not a number, check if it is a boolean
+                        if l.lexeme() == "true" {
+                            (SymbolValueType::Bool, 1)
+                        } else if l.lexeme() == "false" {
+                            (SymbolValueType::Bool, 0)
+                        } else {
+                            // We don't know what it is, crash.
+                            panic!("<YASLC/Parser> Invalid constant value: {}", l.lexeme());
+                        }
+                    }
+                }
+            },
 
-        self.symbol_table.add(id.clone(), SymbolType::Constant(SymbolValueType::Int));
-        let value = self.last_token().unwrap().lexeme();
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
+
+        self.symbol_table.add(id.clone(), SymbolType::Constant(t));
         match self.symbol_table.get(&*id) {
             Some(s) => {
                 // If it is a constant then set the value
-                self.declarations.push(format!("movw ^{} +{}@R{}", value, s.offset(), s.register()));
+                self.declarations.push(format!("movw ^{} +{}@R{}", v, s.offset(), s.register()));
             },
             None => {
                 panic!("Internal error with the symbol table.");
@@ -427,8 +427,12 @@ impl Parser {
         let t = match self.token_type() {
             ParserState::Continue => {
                 match self.last_token().unwrap().token_type() {
-                    TokenType::Keyword(KeywordType::Bool) => SymbolValueType::Bool,
-                    TokenType::Keyword(KeywordType::Int) => SymbolValueType::Int,
+                    TokenType::Keyword(KeywordType::Bool) => {
+                        SymbolValueType::Bool
+                    },
+                    TokenType::Keyword(KeywordType::Int) => {
+                        SymbolValueType::Int
+                    },
                     _ => {
                         println!("<YASLC/Parser> Error: Unrecognized type for var found {}.", self.last_token().unwrap());
                         return ParserState::Done(ParserResult::Unexpected);
@@ -623,7 +627,9 @@ impl Parser {
         match self.check_token(TokenType::Keyword(KeywordType::If), token.clone()) {
             ParserState::Continue => {
                 match self.expression() {
-                    ParserState::Continue => {},
+                    ParserState::Continue => {
+                        // TODO: Get the value of the expression and do something with it
+                    },
                     _ => return ParserState::Done(ParserResult::Unexpected),
                 };
 
@@ -645,7 +651,9 @@ impl Parser {
         match self.check_token(TokenType::Keyword(KeywordType::While), token.clone()) {
             ParserState::Continue => {
                 match self.expression() {
-                    ParserState::Continue => {},
+                    ParserState::Continue => {
+                        // TODO: Get the value of the expression and do something with it
+                    },
                     _ => return ParserState::Done(ParserResult::Unexpected),
                 };
 
@@ -759,14 +767,58 @@ impl Parser {
     fn follow_id(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting FOLLOW-ID rule.");
 
+        // Get the identifier
+        let id = self.last_token().unwrap().lexeme();
+
         match self.check(TokenType::Assign) {
             ParserState::Continue => {
-                return self.expression();
+                match self.expression() {
+                    ParserState::Continue => {
+                        let mut f = match self.e_parser {
+                            Some(ref s) => {
+                                s.final_symbol()
+                            },
+                            None => {
+                                panic!("<YASLC/Parser> Warning: attempted to use expression to set variable but the expression parser is missing!");
+                            }
+                        };
+
+                        // Move the value of the expression to the identifier
+                        let id_symbol = self.symbol_table.get(&*id).unwrap().clone();
+
+                        // Check that we're assigning to a variable
+                        match id_symbol.symbol_type {
+                            SymbolType::Variable(_) => {},
+                            SymbolType::Constant(_) => {
+                                println!("<YASLC/Parser> Attempted to assign a value to a constant!");
+                                return ParserState::Done(ParserResult::Unexpected);
+                            },
+                            SymbolType::Procedure => {
+                                println!("<YASLC/Parser> Attempted to assign a value to a procedure!");
+                                return ParserState::Done(ParserResult::Unexpected);
+                            },
+                        }
+
+                        // Check that we're assigning to the same type
+                        if id_symbol.symbol_type != f.symbol_type {
+                            println!("<YASLC/Parser> Attempted to assign a value to a variable who's type is not the same!");
+                            return ParserState::Done(ParserResult::Unexpected)
+                        }
+
+                        // Add the command
+                        self.add_command(&*format!("movw +0@R{} +{}@R{}", f.register(), id_symbol.offset(), id_symbol.register()));
+
+                        return ParserState::Continue;
+                    },
+                    _ => return ParserState::Done(ParserResult::Unexpected),
+                };
             },
             _ => {},
         };
 
         self.insert_last_token();
+
+        // We're dealing with a proc that has arguments
 
         match self.check(TokenType::LeftParen) {
             ParserState::Continue => {
@@ -843,7 +895,14 @@ impl Parser {
         }
 
         log!("<YASLC/Parser> Adding print statement waiting for expression.");
-        self.expression()
+        match self.expression() {
+            ParserState::Continue => {
+                // TODO: Get the value of the expression and print
+
+                return ParserState::Continue;
+            },
+            _ => return ParserState::Done(ParserResult::Unexpected),
+        };
     }
 
     fn expression(&mut self) -> ParserState {

@@ -196,6 +196,8 @@ impl fmt::Display for Expression {
 pub struct ExpressionParser {
     /// The list of commands to be pushed onto the program given this expression.
     commands: Vec<String>,
+
+    final_symbol: Symbol,
 }
 
 impl ExpressionParser {
@@ -207,6 +209,36 @@ impl ExpressionParser {
             Some(e) => e,
             None => return None,
         };
+
+        // Type check the expressions
+        // for e in expressions.iter() {
+        //     match e {
+        //         &Expression::Operand(ref t) => {
+        //             let es_type = match t.lexeme().parse::<i32>() {
+        //                 Ok(n) => {
+        //                     // Its a number
+        //                     SymbolValueType::Int
+        //                 },
+        //                 Err(_) => {
+        //                     // It is not a number, check if it is a boolean
+        //                     if t.lexeme() == "true" || t.lexeme() == "false" {
+        //                         SymbolValueType::Bool
+        //                     } else {
+        //                         // We don't know what it is, crash.
+        //                         println!("<YASLC/Parser> Could not determine type of value: {}", t.lexeme());
+        //                         return None;
+        //                     }
+        //                 }
+        //             };
+        //
+        //             if es_type != s_type {
+        //                 println!("<YASLC/ExpressionParser> Found value in expression of the wrong type!");
+        //                 return None;
+        //             }
+        //         },
+        //         _ => {},
+        //     };
+        // }
 
         // Convert infix notation to reverse polish notation
         let postfix_exp = match ExpressionParser::expressions_to_postfix(expressions) {
@@ -232,12 +264,17 @@ impl ExpressionParser {
 
         Some(ExpressionParser {
             commands: commands,
+            final_symbol: f_symbol
         })
     }
 
     /// Returns a list of commands from this expression parser.
     pub fn commands(&self) -> Vec<String> {
         self.commands.clone()
+    }
+
+    pub fn final_symbol(&self) -> Symbol {
+        self.final_symbol.clone()
     }
 
     /// Reduces the stack of postfix expressions until there is only one remaining.
@@ -270,7 +307,7 @@ impl ExpressionParser {
 
         }
 
-        let f_symbol = match ExpressionParser::final_symbol(stack, table) {
+        let f_symbol = match ExpressionParser::f_symbol(stack, table) {
             (Some(s), coms) => {
                 for com in coms {
                     commands.push(com);
@@ -286,7 +323,7 @@ impl ExpressionParser {
         (Some(f_symbol), commands)
     }
 
-    fn final_symbol(mut stack: Vec<Expression>, mut table: SymbolTable) -> (Option<Symbol>, Vec<String>) {
+    fn f_symbol(mut stack: Vec<Expression>, mut table: SymbolTable) -> (Option<Symbol>, Vec<String>) {
         match stack.remove(0) {
             Expression::Combined(s) => (Some(s), Vec::<String>::new()),
             Expression::Operand(t) => {
@@ -297,8 +334,7 @@ impl ExpressionParser {
                         let symbol = match table.get(&*t.lexeme()) {
                             Some(s) => s,
                             None => {
-                                panic!("<YASLC/ExpressionParser> Attempted to use a symbol that
-                                was not found in the symbol table! This is very unexpected...");
+                                panic!("<YASLC/ExpressionParser> Attempted to use a symbol that was not found in the symbol table! This is very unexpected...");
                             }
                         };
                         (Some(symbol.clone()), Vec::<String>::new())
@@ -390,6 +426,10 @@ impl ExpressionParser {
             Expression::Combined(s) => s,
             _ => panic!("Found an operator where we were expecting an operand!"),
         };
+
+        if s1.symbol_type != s2.symbol_type {
+            panic!("<YASLC/ExpressionParser> Attempted to perform operation on two symbols which don't have the same type!");
+        }
 
         // Find the destination symbol
         let dest = if s1.is_temp() {

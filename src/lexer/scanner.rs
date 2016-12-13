@@ -50,8 +50,8 @@ impl Scanner {
         };
 
         // Set the line number and column number
-        let line_number = 0;
-        let column_number = 0;
+        let line_number = 1;
+        let column_number = 1;
         let token_builder = TokenBuilder::new(column_number, line_number);
 
         Some(Scanner {

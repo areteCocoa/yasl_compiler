@@ -375,7 +375,7 @@ impl TokenBuilder {
             "mod" => Some(Mod),
             "var" => Some(Var),
             "int" => Some(Int),
-            "boolean" => Some(Bool),
+            "bool" => Some(Bool),
             "proc" => Some(Proc),
             "if" => Some(If),
             "then" => Some(Then),
