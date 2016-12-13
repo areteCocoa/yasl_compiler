@@ -11,7 +11,6 @@ mod file_generator;
 
 pub use super::lexer::{Token, TokenType, KeywordType};
 
-#[allow(unused_imports)]
 pub use self::symbol::{Symbol, SymbolTable, SymbolType, SymbolValueType};
 use self::file_generator::file_from;
 use self::expression::ExpressionParser;
@@ -83,8 +82,6 @@ macro_rules! c_exp {
         }
     };
 }
-
-#[allow(dead_code)]
 
 /// The Parser struct can check syntax for a set of tokens for validity as well as generate
 /// the final code for them.

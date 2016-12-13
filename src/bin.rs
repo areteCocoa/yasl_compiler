@@ -18,7 +18,7 @@ macro_rules! log {
 // include the lib.rs file
 extern crate yasl_compiler;
 
-use yasl_compiler::lexer::{LexerResult, LexerError, read_file};
+use yasl_compiler::compile_file;
 
 // Include the io lib
 use std::io;
@@ -77,23 +77,5 @@ fn main() {
         }
     }
 
-    let tokens = match read_file(file_name) {
-        LexerResult::Ok(t) => t,
-        LexerResult::Err(e) => {
-            match e {
-                LexerError::FileError => println!("<YASLC> Encountered a file error!"),
-                LexerError::StdinError => println!("<YASLC> Encountered an error with stdin!"),
-            };
-
-            println!("<YASLC/Lexer> Error reading file. Attempting to find the error...");
-            let os_error = std::io::Error::last_os_error();
-            println!("This is the last OS error we could find: {}", os_error);
-            return;
-        }
-    };
-
-    log!("<YASLC> Successful lexical analysis of file. Parsing.");
-
-    let mut parser = yasl_compiler::parser::Parser::new_with_tokens(tokens);
-    parser.parse();
+    compile_file(file_name);
 }

@@ -489,7 +489,9 @@ impl ExpressionParser {
 
                 return Ok(commands);
             }
-            n => panic!("Unrecognized operator '{}' in expression!", n),
+            n => {
+                panic!("Unrecognized operator '{}' in expression!", n)
+            },
         };
 
         // Perform the operation

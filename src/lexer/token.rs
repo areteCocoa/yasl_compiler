@@ -42,9 +42,6 @@ pub enum TokenType {
     EqualTo,
     NotEqualTo,
 
-    // Misc
-    EOFile,
-
     // Invalids
     Invalid
 }
@@ -80,7 +77,6 @@ impl fmt::Display for TokenType {
             &TokenType::EqualTo => write!(f, "EQUALTO"),
             &TokenType::NotEqualTo => write!(f, "NOTEQUALTO="),
 
-            &TokenType::EOFile => write!(f, "EOF"),
             &TokenType::Invalid => write!(f, "Invalid"),
         }
     }
@@ -160,33 +156,18 @@ pub struct Token {
 }
 
 impl Token {
-    /// Returns an empty, placeholder token.
-    pub fn new() -> Token {
-        Token {
-            line: 0,
-            column: 0,
-            lexeme: "".to_string(),
-            token_type: TokenType::EOFile,
-        }
-    }
-
     pub fn new_with(line: u32, column: u32, lexeme: String, token_type: TokenType) -> Token {
         Token {
+            token_type: token_type,
             line: line,
             column: column,
-            lexeme: lexeme,
-            token_type: token_type,
+            lexeme: lexeme
         }
     }
 
     /// Returns the token_type for this token.
     pub fn token_type(&self) -> TokenType {
         self.token_type.clone()
-    }
-
-    /// Sets the token_type for this token.
-    pub fn set_token_type(&mut self, t: TokenType) {
-        self.token_type = t;
     }
 
     /// Returns true if the token is of type t, false otherwise
@@ -199,35 +180,20 @@ impl Token {
         self.lexeme.clone()
     }
 
-    /// Sets the lexeme associated with this token.
-    pub fn set_lexeme(&mut self, l: String) {
-        self.lexeme = l;
-    }
-
     /// Returns the line number for this token.
     pub fn line(&self) -> u32 {
         self.line
-    }
-
-    /// Sets the line number for this token.
-    pub fn set_line(&mut self, line: u32) {
-        self.line = line;
     }
 
     /// Returns the column number for this token.
     pub fn column(&self) -> u32 {
         self.column
     }
-
-    /// Sets the column number for this token.
-    pub fn set_column(&mut self, column: u32) {
-        self.column = column;
-    }
 }
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {} {}:{}", self.token_type, self.lexeme, self.line, self.column)
+        write!(f, "Token: <{}, '{}', {}:{}>", self.token_type, self.lexeme, self.line, self.column)
     }
 }
 
@@ -400,12 +366,6 @@ impl TokenBuilder {
     /// Returns the column where the current column started.
     pub fn column(&mut self, column: u32) {
         self.column = column;
-    }
-
-    /// Returns the current lexeme for this token builder.
-    #[allow(dead_code)]
-    pub fn lexeme(&mut self, lexeme: String) {
-        self.lexeme = lexeme;
     }
 }
 

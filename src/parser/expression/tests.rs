@@ -77,9 +77,9 @@ macro_rules! is_commands {
     );
 }
 
-/// **************************
-/// ****** Parser Tests ******
-/// **************************
+/// **************************************
+/// ****** Expression Parsing Tests ******
+/// **************************************
 
 #[test]
 #[should_panic]
@@ -140,9 +140,32 @@ fn e_parser_identifier_fail() {
         Token::new_with(0, 0, "x".to_string(), TokenType::Identifier));
 }
 
-/// ******************************************
-/// ****** Parser Code Generation Tests ******
-/// ******************************************
+#[test]
+fn e_parser_bool_one() {
+    eparser_helper!(TS "true", TokenType::Keyword(KeywordType::True));
+}
+
+#[test]
+#[ignore]
+fn e_parser_bool_and() {
+    eparser_helper!(TS "true", TokenType::Keyword(KeywordType::True),
+        "AND", TokenType::Keyword(KeywordType::And),
+        "true", TokenType::Keyword(KeywordType::True)
+    );
+}
+
+#[test]
+#[ignore]
+fn e_parser_int_comp() {
+    eparser_helper!(TS "5", TokenType::Number,
+        "<", TokenType::LessThan,
+        "4", TokenType::Number
+    );
+}
+
+/// *****************************************************
+/// ****** Expression Parser Code Generation Tests ******
+/// *****************************************************
 
 #[test]
 // Checks if a single identifier will generate the correct code
