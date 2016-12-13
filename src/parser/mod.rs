@@ -143,7 +143,18 @@ impl Parser {
                 match r {
                     ParserResult::Success => {
                         println!("<YASLC/Parser> Correctly parsed YASL program file.");
-                        match file_from(self.commands.clone(), self.declarations.clone()) {
+
+                        self.declarations.append(&mut self.commands);
+                        // Fix the first command to start with $main
+                        let first = match self.declarations.get(0) {
+                            Some(s) => s.clone(),
+                            None => panic!("Attempted to prepend the first command but there is no first command!"),
+                        };
+                        let new_first = format!("$main {}", first);
+
+                        self.declarations[0] = new_first;
+
+                        match file_from(self.declarations.clone()) {
                             Ok(f) => {
                                 log!("<YASLC/Parser> Successfully wrote file {:?}!", f);
                             },
@@ -234,23 +245,8 @@ impl Parser {
     /// Adds the string command to the list of commands.
     fn add_command(&mut self, command: &str) {
         let s = self.commands.len();
-        if s > 0 {
-            if self.commands[self.commands.len() - 1] == "$main".to_string() {
-                // If we have the main label but haven't pushed a command we need to push the command
-                // in front of $main
-                self.commands.remove(s - 1);
-
-                let com = format!("$main {}", command);
-                log!("<YASLC/Parser> Adding command to list of output after appending $main: \'{}\'", com);
-                self.commands.push(com);
-            } else {
-                log!("<YASLC/Parser> Adding command to list of output: \'{}\'", command);
-                self.commands.push(command.to_string());
-            }
-        } else {
-            log!("<YASLC/Parser> Adding command to list of output: \'{}\'", command);
-            self.commands.push(command.to_string());
-        }
+        log!("<YASLC/Parser> Adding command to list of output: \'{}\'", command);
+        self.commands.push(command.to_string());
     }
 
     /// Adds the print command, which is a series of single character outputs.
@@ -263,11 +259,6 @@ impl Parser {
             }
             i += 1;
         }
-    }
-
-    /// Adds the declaration to the declaraction list
-    fn add_declaration(&mut self, declaration: &str, size: u32) {
-        self.declarations.push(format!("${} #{}", declaration, size));
     }
 
     /**
@@ -283,9 +274,6 @@ impl Parser {
         c_token!(self, TokenType::Keyword(KeywordType::Program));
         c_token!(self, TokenType::Identifier);
         c_token!(self, TokenType::Semicolon);
-
-        // Mark the main block in the output file
-        self.add_command("$main");
 
         c_exp!(self.block());
 
@@ -382,7 +370,17 @@ impl Parser {
         c_token!(self, TokenType::Number);
 
         self.symbol_table.add(id.clone(), SymbolType::Constant(SymbolValueType::Int));
-        self.add_declaration(&*id, 4);
+        let value = self.last_token().unwrap().lexeme();
+        match self.symbol_table.get(&*id) {
+            Some(s) => {
+                // If it is a constant then set the value
+                self.declarations.push(format!("movw ^{} +{}@R{}", value, s.offset(), s.register()));
+            },
+            None => {
+                panic!("Internal error with the symbol table.");
+            }
+        }
+
 
         c_token!(self, TokenType::Semicolon,
             ParserState::Done(ParserResult::Unexpected),
@@ -434,7 +432,15 @@ impl Parser {
         };
 
         self.symbol_table.add(id.clone(), SymbolType::Variable(t));
-        self.add_declaration(&*id, 4);
+        match self.symbol_table.get(&*id) {
+            Some(s) => {
+                // Initialize the value as 0
+                self.declarations.push(format!("movw ^0 +{}@R{}", s.offset(), s.register()));
+            },
+            None => {
+                panic!("Internal error with the symbol table.");
+            }
+        }
 
         self.check(TokenType::Semicolon)
     }
