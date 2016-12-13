@@ -774,7 +774,7 @@ impl Parser {
             ParserState::Continue => {
                 match self.expression() {
                     ParserState::Continue => {
-                        let mut f = match self.e_parser {
+                        let f = match self.e_parser {
                             Some(ref s) => {
                                 s.final_symbol()
                             },

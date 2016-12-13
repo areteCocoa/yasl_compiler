@@ -133,12 +133,12 @@ impl SymbolTable {
 
     /// Returns the next temp variable using $(NUMBER) where NUMBER is incremented and
     /// guarenteed to be unique.
-    pub fn temp(&mut self) -> Symbol {
+    pub fn temp(&mut self, s_type: SymbolType) -> Symbol {
         let name = format!("${}", self.next_temp);
 
         let s = Symbol {
             identifier: name,
-            symbol_type: SymbolType::Variable(SymbolValueType::Int),
+            symbol_type: s_type,
             offset: self.next_offset,
             register: 1,
         };

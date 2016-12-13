@@ -25,6 +25,30 @@ macro_rules! log {
     };
 }
 
+// Helper function
+fn type_for_token(l: Token) -> Option<SymbolValueType> {
+    // If the lexeme is numeric it's a number, otherwise if its "true"/"false its a boolean"
+    // if its neither then crash
+    match l.lexeme().parse::<i32>() {
+        Ok(n) => {
+            // Its a number
+            Some(SymbolValueType::Int)
+        },
+        Err(_) => {
+            // It is not a number, check if it is a boolean
+            if l.lexeme() == "true" {
+                Some(SymbolValueType::Bool)
+            } else if l.lexeme() == "false" {
+                Some(SymbolValueType::Bool)
+            } else {
+                // We don't know what it is, crash.
+                println!("<YASLC/ExpressionParser> Warning: unable to identify value type for token {}.", l);
+                None
+            }
+        }
+    }
+}
+
 /// Expression represents a single piece of expressions.
 #[derive(PartialEq, Clone)]
 enum Expression {
@@ -52,17 +76,23 @@ impl Expression {
     /// or returns None if the expression is not valid given the token.
     fn from_token(t: Token) -> Option<Expression> {
         match t.token_type() {
+            // Constant numbers
             TokenType::Number => Some(Expression::Operand(t)),
 
+            // Operators
             TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Keyword(KeywordType::Div)
             | TokenType::Keyword(KeywordType::Mod) | TokenType::GreaterThan | TokenType::LessThan
             | TokenType::GreaterThanOrEqual | TokenType::LessThanOrEqual | TokenType::EqualTo
             | TokenType::NotEqualTo => Some(Expression::Operator(t.token_type())),
 
+            // TokenType::Keyword(KeywordType::Print) => Some(Expression::Operator(t.token_type())),
 
-            TokenType::Keyword(KeywordType::Print) => Some(Expression::Operator(t.token_type())),
-
+            // Variables and Constants
             TokenType::Identifier => Some(Expression::Operand(t)),
+
+            // true and false
+            TokenType::Keyword(KeywordType::True) | TokenType::Keyword(KeywordType::False) =>
+                Some(Expression::Operand(t)),
 
             _ => {
                 None
@@ -210,36 +240,6 @@ impl ExpressionParser {
             None => return None,
         };
 
-        // Type check the expressions
-        // for e in expressions.iter() {
-        //     match e {
-        //         &Expression::Operand(ref t) => {
-        //             let es_type = match t.lexeme().parse::<i32>() {
-        //                 Ok(n) => {
-        //                     // Its a number
-        //                     SymbolValueType::Int
-        //                 },
-        //                 Err(_) => {
-        //                     // It is not a number, check if it is a boolean
-        //                     if t.lexeme() == "true" || t.lexeme() == "false" {
-        //                         SymbolValueType::Bool
-        //                     } else {
-        //                         // We don't know what it is, crash.
-        //                         println!("<YASLC/Parser> Could not determine type of value: {}", t.lexeme());
-        //                         return None;
-        //                     }
-        //                 }
-        //             };
-        //
-        //             if es_type != s_type {
-        //                 println!("<YASLC/ExpressionParser> Found value in expression of the wrong type!");
-        //                 return None;
-        //             }
-        //         },
-        //         _ => {},
-        //     };
-        // }
-
         // Convert infix notation to reverse polish notation
         let postfix_exp = match ExpressionParser::expressions_to_postfix(expressions) {
             Some(e) => e,
@@ -343,7 +343,8 @@ impl ExpressionParser {
                     // For continuity we will push it as a temp variable so we can use
                     // it as a symbol to get all the code support for symbol arithmatic
                     false => {
-                        let s = table.temp();
+
+                        let s = table.temp(SymbolType::Variable(type_for_token(t.clone()).unwrap()));
                         // TODO: Is the correct format for constants "^"?
                         let c = format!("movw ^{} +{}@R{}", t.lexeme(), s.offset(), s.register());
                         let mut commands = Vec::<String>::new();
@@ -397,7 +398,7 @@ impl ExpressionParser {
                         None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
                     }
                 } else {
-                    let temp = table.temp();
+                    let temp = table.temp(SymbolType::Variable(type_for_token(t.clone()).unwrap()));
 
                     commands.push(format!("movw ^{} +{}@R{}", t.lexeme(), temp.offset(), temp.register()));
 
@@ -416,7 +417,7 @@ impl ExpressionParser {
                         None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
                     }
                 } else {
-                    let temp = table.temp();
+                    let temp = table.temp(SymbolType::Variable(type_for_token(t.clone()).unwrap()));
 
                     commands.push(format!("movw ^{} +{}@R{}", t.lexeme(), temp.offset(), temp.register()));
 
@@ -428,7 +429,7 @@ impl ExpressionParser {
         };
 
         if s1.symbol_type != s2.symbol_type {
-            panic!("<YASLC/ExpressionParser> Attempted to perform operation on two symbols which don't have the same type!");
+            return Err(format!("<YASLC/ExpressionParser> Attempted to perform operation on two symbols which don't have the same type!"));
         }
 
         // Find the destination symbol
@@ -440,7 +441,7 @@ impl ExpressionParser {
             // We have to operate on a temp
             //
             // Move the value from the first symbol to temp
-            let temp = table.temp();
+            let temp = table.temp(s1.symbol_type.clone());
             let mov = format!("movw +{}@R{} +{}@R{}", s1.offset(), s1.register(),
                 temp.offset(), temp.register());
             commands.push(mov);
@@ -458,7 +459,7 @@ impl ExpressionParser {
 
                 // Generate temp 1 and 2
                 let temp1 = dest;
-                let temp2 = table.temp();
+                let temp2 = table.temp(s2.symbol_type.clone());
 
                 // Divide temp1 by s2
                 commands.push(format!("divw +{}@R{} +{}@R{}",
