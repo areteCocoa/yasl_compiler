@@ -360,8 +360,11 @@ impl ExpressionParser {
                         None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
                     }
                 } else {
-                    // Generate the "value code for a constant number"
-                    table.temp()
+                    let temp = table.temp();
+
+                    commands.push(format!("movw ^{} +{}@R{}", t.lexeme(), temp.offset(), temp.register()));
+
+                    temp
                 }
             },
             Expression::Combined(s) => s,
@@ -376,8 +379,11 @@ impl ExpressionParser {
                         None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
                     }
                 } else {
-                    // Generate the "value code for a constant number"
-                    table.temp()
+                    let temp = table.temp();
+
+                    commands.push(format!("movw ^{} +{}@R{}", t.lexeme(), temp.offset(), temp.register()));
+
+                    temp
                 }
             },
             Expression::Combined(s) => s,
@@ -466,7 +472,6 @@ impl ExpressionParser {
 
     /// Determines what the expression is and whether it should be inserted to the symbol table
     /// and/or stack as well as whether reduction should happen.
-    /// TODO: Reduce this function call
     fn handle_expression(e: Expression, mut table: &mut SymbolTable, mut stack: &mut Vec<Expression>) -> Result<Option<Vec<String>>, String> {
         // Figure out what the expression
         match e.clone() {

@@ -85,71 +85,59 @@ macro_rules! is_commands {
 #[should_panic]
 // test if the expression parser works with empty expression (it should panic)
 fn e_parser_empty() {
-    let parser = eparser_helper!();
-    //assert!(parser.is_none())
+    eparser_helper!();
 }
 
 #[test]
 #[should_panic]
 // test if just an operand fails parsing
 fn e_parser_operand() {
-    let parser = eparser_helper!(Token::new_with(0, 0, "+".to_string(), TokenType::Plus));
-    //assert!(parser.is_some());
+    eparser_helper!(Token::new_with(0, 0, "+".to_string(), TokenType::Plus));
 }
 
 #[test]
 // Tests if the expression parser works with a single expression.
 fn e_parser_single() {
-    let parser = eparser_helper!(Token::new_with(0, 0, "5".to_string(), TokenType::Number));
-
-    //assert!(parser.is_some());
+    eparser_helper!(Token::new_with(0, 0, "5".to_string(), TokenType::Number));
 }
 
 #[test]
 #[should_panic]
 // Tests if the expression parser fails when there is an incomplete expression
 fn e_parser_two_incomplete() {
-    let parser = eparser_helper!(Token::new_with(0, 0, "5".to_string(), TokenType::Number),
-                                Token::new_with(0, 0, "+".to_string(), TokenType::Plus));
-
-    //assert!(parser.is_some());
+    eparser_helper!(Token::new_with(0, 0, "5".to_string(), TokenType::Number),
+        Token::new_with(0, 0, "+".to_string(), TokenType::Plus));
 }
 
 #[test]
 // Tests if the expression parser can handle two values and an operator
 fn e_parser_two() {
-    let parser = eparser_helper!(Token::new_with(0, 0, "5".to_string(), TokenType::Number),
-                                Token::new_with(0, 0, "+".to_string(), TokenType::Plus),
-                                Token::new_with(0, 0, "7".to_string(), TokenType::Number));
-
-    //assert!(parser.is_some());
+    eparser_helper!(Token::new_with(0, 0, "5".to_string(), TokenType::Number),
+        Token::new_with(0, 0, "+".to_string(), TokenType::Plus),
+        Token::new_with(0, 0, "7".to_string(), TokenType::Number));
 }
 
 #[test]
 // Test if the expression parser can handle an identifier
 fn e_parser_identifier() {
-    let parser = eparser_helper!(Token::new_with(0, 0, "5".to_string(), TokenType::Number),
-                                Token::new_with(0, 0, "+".to_string(), TokenType::Plus),
-                                Token::new_with(0, 0, "7".to_string(), TokenType::Number),
-                                Token::new_with(0, 0, "*".to_string(), TokenType::Star),
-                                Token::new_with(0, 0, "x".to_string(), TokenType::Identifier));
-
-    //assert!(parser.is_some());
+    eparser_helper!(Token::new_with(0, 0, "5".to_string(), TokenType::Number),
+        Token::new_with(0, 0, "+".to_string(), TokenType::Plus),
+        Token::new_with(0, 0, "7".to_string(), TokenType::Number),
+        Token::new_with(0, 0, "*".to_string(), TokenType::Star),
+        Token::new_with(0, 0, "x".to_string(), TokenType::Identifier));
 }
 
 #[test]
 #[should_panic]
 // Test if the expression parser can handle an identifier that is not in the symbol table
 fn e_parser_identifier_fail() {
-    let mut table = SymbolTable::empty();
+    let table = SymbolTable::empty();
 
-    let parser = eparser_helper!(T table, Token::new_with(0, 0, "5".to_string(), TokenType::Number),
-                                Token::new_with(0, 0, "+".to_string(), TokenType::Plus),
-                                Token::new_with(0, 0, "7".to_string(), TokenType::Number),
-                                Token::new_with(0, 0, "*".to_string(), TokenType::Star),
-                                Token::new_with(0, 0, "x".to_string(), TokenType::Identifier));
-
-    //assert!(parser.is_some())
+    eparser_helper!(T table, Token::new_with(0, 0, "5".to_string(), TokenType::Number),
+        Token::new_with(0, 0, "+".to_string(), TokenType::Plus),
+        Token::new_with(0, 0, "7".to_string(), TokenType::Number),
+        Token::new_with(0, 0, "*".to_string(), TokenType::Star),
+        Token::new_with(0, 0, "x".to_string(), TokenType::Identifier));
 }
 
 /// ******************************************
@@ -239,13 +227,23 @@ fn code_add_product_three() {
         // Multiply temp1 by z
         "mulw +8@R0 +0@R1",
 
+        // WOULD BE THIS but we can not assume a * b = b * a so we must move to a second temp
+        // variable instead
         // Add x to temp1
-        "addw +0@R0 +0@R1"
+        //"addw +0@R0 +0@R1"
+
+        // Move x to temp2
+        "movw +0@R0 +4@R1",
+
+        // Add temp1 to temp2
+        "addw +0@R1 +4@R1",
+
+        // Move temp2 to R1
+        "movw +4@R1 +0@R1"
     );
 }
 
 #[test]
-#[ignore]
 // Check if we can produce correct code for a long operation
 // 4 + x * y - 30 div z + 1
 // (from testG.txt)
@@ -272,12 +270,34 @@ fn code_long_expression() {
     // sub temp 1 by temp 2
     // add 1 to temp 1
     is_commands!(parser.commands,
+        // move x to temp1
         "movw +0@R0 +0@R1",
+
+        // mult temp1 by y
         "mulw +4@R0 +0@R1",
-        "addw ^4 +0@R1",
+
+        // move 30 to t2
         "movw ^30 +4@R1",
+
+        // div temp2 by z
         "divw +8@R0 +4@R1",
-        "subw +4@R1, +0@R1",
-        "addw ^1 +0@R1"
+
+        // move 1 to t3
+        "movw ^1 +8@R1",
+
+        // add t3 to t2
+        "addw +8@R1 +4@R1",
+
+        // sub t2 from t1
+        "subw +4@R1 +0@R1",
+
+        // move 4 to t4
+        "movw ^4 +12@R1",
+
+        // add t1 to t4 (because of the order of operations)
+        "addw +0@R1 +12@R1",
+
+        // move t4 to +0@R1
+        "movw +12@R1 +0@R1"
     );
 }
