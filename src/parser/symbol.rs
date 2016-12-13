@@ -4,6 +4,8 @@
 /// it is valid.
 ///
 
+use std::ops::Index;
+
 /// Set to true if you want the logs of symbol functionality, false otherwise.
 static mut VERBOSE: bool = true;
 
@@ -175,6 +177,10 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    pub fn is_temp(&self) -> bool {
+        self.identifier.index(0..1) == "$"
+    }
+
     pub fn identifier(&self) -> &String {
         &self.identifier
     }

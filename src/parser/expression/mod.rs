@@ -225,8 +225,10 @@ impl ExpressionParser {
         };
 
         // Now that we have one single expression, move it to the SP
-        let sp_mov = format!("movw +{}@R{} +0@R{}", f_symbol.offset(), f_symbol.register(), f_symbol.register());
-        commands.push(sp_mov);
+        if f_symbol.offset() != 0 {
+            let sp_mov = format!("movw +{}@R{} +0@R{}", f_symbol.offset(), f_symbol.register(), f_symbol.register());
+            commands.push(sp_mov);
+        }
 
         Some(ExpressionParser {
             commands: commands,
@@ -287,6 +289,7 @@ impl ExpressionParser {
             Expression::Operand(t) => {
                 // It is a single operand
                 match t.is_type(TokenType::Identifier) {
+                    // It is in the symbol table
                     true => {
                         let symbol = match table.get(&*t.lexeme()) {
                             Some(s) => s,
@@ -297,6 +300,7 @@ impl ExpressionParser {
                         };
                         (Some(symbol.clone()), Vec::<String>::new())
                     },
+                    // It is a number and we can use it literally
                     false => {
                         // TODO: Do we push the number to the stack as a temp?
                         let s = table.temp();
@@ -330,10 +334,100 @@ impl ExpressionParser {
         Ok((e1, e2))
     }
 
+    // fn perform_operation(t_type: TokenType, s1: &Symbol, v: String) -> Result<Vec<String>, String> {
+    //     Err("".to_string())
+    // }
+
+    fn reduce_expression(t_type: TokenType, mut stack: &mut Vec<Expression>, mut table: &mut SymbolTable) -> Result<Vec<String>, String> {
+        let mut commands = Vec::<String>::new();
+
+        // Pop the previous two expressions
+        let (e1, e2) = match ExpressionParser::last_two_expressions(&mut stack) {
+            Ok((r1, r2)) => (r1, r2),
+            Err(e) => panic!("<YASLC/ExpresionParser> {}", e),
+        };
+
+        // Match the first expression because if it is a temp variable we can operate on that
+        // and not have to create another temp variable
+        let s1 = match e1 {
+            Expression::Operand(t) => {
+                if t.is_type(TokenType::Identifier) {
+                    match table.get(&*t.lexeme()) {
+                        Some(x) => x.clone(),
+                        None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
+                    }
+                } else {
+                    // Generate the "value code for a constant number"
+                    table.temp()
+                }
+            },
+            Expression::Combined(s) => s,
+            _ => panic!("Found an operator where we were expecting an operand!"),
+        };
+
+        let s2 = match e2 {
+            Expression::Operand(t) => {
+                if t.is_type(TokenType::Identifier) {
+                    match table.get(&*t.lexeme()) {
+                        Some(x) => x.clone(),
+                        None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
+                    }
+                } else {
+                    // Generate the "value code for a constant number"
+                    table.temp()
+                }
+            },
+            Expression::Combined(s) => s,
+            _ => panic!("Found an operator where we were expecting an operand!"),
+        };
+
+        // Find the destination symbol
+        let dest = if s1.is_temp() {
+            // We can operate on s1
+            s1
+        } else {
+            // We have to operate on a temp
+            //
+            // Move the value from the first symbol to temp
+            let temp = table.temp();
+            let mov = format!("movw +{}@R{} +{}@R{}", s1.offset(), s1.register(),
+                temp.offset(), temp.register());
+            commands.push(mov);
+            temp
+        };
+
+        // Determine the operator given the token type
+        let op = match t_type {
+            TokenType::Plus => "addw",
+            TokenType::Minus => "subw",
+            TokenType::Star => "mulw",
+            TokenType::Keyword(KeywordType::Div) => "divw",
+            TokenType::Keyword(KeywordType::Mod) => {
+                // TODO special case
+                "divw"
+            }
+            n => panic!("Unrecognized operator '{}' in expression!", n),
+        };
+
+        // Perform the operation
+        let full_op = format!("{} +{}@R{} +{}@R{}", op, s2.offset(), s2.register(),
+            dest.offset(), dest.register());
+
+        commands.push(full_op);
+
+        // Create the combination expression
+        let c = Expression::Combined(dest.clone());
+
+        // Push the combination expression to the stack
+        stack.push(c);
+
+        Ok(commands)
+    }
+
     /// Determines what the expression is and whether it should be inserted to the symbol table
     /// and/or stack as well as whether reduction should happen.
     /// TODO: Reduce this function call
-    fn handle_expression(e: Expression, table: &mut SymbolTable, mut stack: &mut Vec<Expression>) -> Result<Option<Vec<String>>, String> {
+    fn handle_expression(e: Expression, mut table: &mut SymbolTable, mut stack: &mut Vec<Expression>) -> Result<Option<Vec<String>>, String> {
         // Figure out what the expression
         match e.clone() {
             // The expression is an operand but may be an identifier (variable)
@@ -371,93 +465,12 @@ impl ExpressionParser {
             // expressions is already in postfix order.
             Expression::Operator(t_type) => {
                 // Pop the previous two expressions and combine them
-                let (e1, e2) = match ExpressionParser::last_two_expressions(&mut stack) {
-                    Ok((r1, r2)) => (r1, r2),
-                    Err(e) => panic!("<YASLC/ExpresionParser> {}", e),
-                };
+                let reduce_result = ExpressionParser::reduce_expression(t_type, &mut stack, &mut table);
 
-                // Get the temporary symbol from the symbol table
-                let temp = table.temp().clone();
-
-                // Get the symbols for the two operands
-                let s1 = match e1 {
-                    Expression::Operand(t) => {
-                        // If it is a variable we need to check the table, otherwise use a temp
-                        match t.is_type(TokenType::Identifier) {
-                            true => {
-                                match table.get(&*t.lexeme()) {
-                                    Some(x) => x.clone(),
-                                    None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
-                                }
-                            },
-                            false => {
-                                // TODO: Generate the "value code" for a constant number
-                                let temp = table.temp();
-                                temp
-                            }
-                        }
-
-                    },
-                    Expression::Combined(s) => s,
-                    _ => {
-                        panic!("Found an operator where we were expecting an operand!");
-                    }
-                };
-                let s2 = match e2 {
-                    Expression::Operand(t) => {
-                        match t.is_type(TokenType::Identifier) {
-                            true => {
-                                match table.get(&*t.lexeme()) {
-                                    Some(x) => x.clone(),
-                                    None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
-                                }
-                            },
-                            false => {
-                                // TODO: Generate the "value code" for a constant number
-                                let temp = table.temp();
-                                temp
-                            }
-                        }
-                    },
-                    Expression::Combined(s) => s,
-                    _ => {
-                        panic!("Found an operator where we were expecting an operand!");
-                    }
-                };
-
-                // Create the output for the evaluation using the temp symbol
-                //  - Move the first variable to the temp location
-                let mov = format!("movw +{}@R{} +{}@R{}", s1.offset(), s1.register(),
-                    temp.offset(), temp.register());
-
-                //  - Figure out the operation command
-                let op = match t_type {
-                    TokenType::Plus => "addw",
-                    TokenType::Minus => "subw",
-                    TokenType::Star => "mulw",
-                    TokenType::Keyword(KeywordType::Div) => "divw",
-                    TokenType::Keyword(KeywordType::Mod) => {
-                        // TODO special case
-                        "divw"
-                    }
-                    n => panic!("Unrecognized operator '{}' in expression!", n),
-                };
-
-                let full_op = format!("{} +{}@R{} +{}@R{}", op, s2.offset(), s2.register(),
-                    temp.offset(), temp.register());
-
-                let mut commands = Vec::<String>::new();
-
-                commands.push(mov);
-                commands.push(full_op);
-
-                // Create the combination expression
-                let c = Expression::Combined(temp.clone());
-
-                // Push the combination expression to the stack
-                stack.push(c);
-
-                Ok(Some(commands))
+                match reduce_result {
+                    Ok(com) => return Ok(Some(com)),
+                    Err(e) => panic!("Error while reducing expression stack: {}", e),
+                }
             },
             Expression::Combined(_) => {
                 stack.push(e);
