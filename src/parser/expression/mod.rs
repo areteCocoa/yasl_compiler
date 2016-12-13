@@ -560,11 +560,18 @@ impl ExpressionParser {
                     stack.push(e);
                 },
                 Expression::Operator(_) => {
+                    log!("<YASLC/ExpressionParser> Found operator {}.", e);
                     // We have an operator, check it's precedence vs the top of the stack
                     if op_stack.len() != 0 {
                         while let Some(o) = op_stack.pop() {
-                            log!("<YASLC/ExpressionParser> Pushing operator '{}' to the operand stack.", o);
-                            stack.push(o);
+                            // If its greater than current expression, pop and add to stack
+                            if o > e {
+                                log!("<YASLC/ExpressionParser> Pushing operator '{}' to the operand stack.", o);
+                                stack.push(o);
+                            } else {
+                                op_stack.push(o);
+                                break;
+                            }
                         }
                     }
 
@@ -583,6 +590,13 @@ impl ExpressionParser {
         }
 
         log!("<YASLC/ExpressionParser> Successfully converted infix expressions to postfix.");
+        for e in stack.iter() {
+            match e {
+                &Expression::Operand(ref t) => log!("\t{:?}", t.lexeme()),
+                &Expression::Operator(ref t) => log!("\t{}", t),
+                _ => {},
+            };
+        }
 
         Some(stack)
     }

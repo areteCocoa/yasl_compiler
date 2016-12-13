@@ -219,7 +219,6 @@ fn code_mod_two() {
 }
 
 #[test]
-#[ignore]
 // Check if we can produce the correct code with order of operations for x + y * z
 fn code_add_product_three() {
     let parser = eparser_helper!(
@@ -234,8 +233,13 @@ fn code_add_product_three() {
     // Mult temp 1 by z
     // Add x to temp 1
     is_commands!(parser.commands,
+        // Move y to temp1
         "movw +4@R0 +0@R1",
+
+        // Multiply temp1 by z
         "mulw +8@R0 +0@R1",
+
+        // Add x to temp1
         "addw +0@R0 +0@R1"
     );
 }
