@@ -1,4 +1,4 @@
-# Vali Assembly Language Commands
+# PALI Assembly Language Commands
 
 ## Input and Output
 
