@@ -30,6 +30,11 @@ pub struct SymbolTable {
 
     old_table: Option<Box<SymbolTable>>,
 
+    // A list of offsets per register
+    register_offsets: Vec<u32>,
+
+    register: u32,
+
     next_offset: u32,
 
     next_temp: u32,
@@ -41,6 +46,8 @@ impl SymbolTable {
         SymbolTable {
             symbols: Vec::<Symbol>::new(),
             old_table: None,
+            register_offsets: Vec::<u32>::new(),
+            register: 0,
             next_offset: 0,
             next_temp: 0,
         }
@@ -50,13 +57,19 @@ impl SymbolTable {
     fn child_table(self) -> SymbolTable {
         log!("<YASLC/SymbolTable> Creating child symbol table for table to create new scope.");
 
+        let register = self.register;
+        let n_o = self.next_offset;
+        let n_t = self.next_temp;
+
         let pointer_old = Box::<SymbolTable>::new(self);
 
         SymbolTable {
             symbols: Vec::<Symbol>::new(),
             old_table: Some(pointer_old),
-            next_offset: 0,
-            next_temp: 0,
+            register_offsets: Vec::<u32>::new(),
+            register: register,
+            next_offset: n_o,
+            next_temp: n_t,
         }
     }
 
@@ -138,6 +151,18 @@ impl SymbolTable {
         s
     }
 
+    pub fn up_register(&mut self) {
+        self.register += 1;
+        self.next_offset = 0;
+        self.next_temp = 0;
+        // TODO: Change offset and temp
+    }
+
+    pub fn down_register(&mut self) {
+        self.register -= 1;
+        // TODO: Go back to old offset and temp
+    }
+
     /// Resets the next_offset property.
     pub fn reset_offset(&mut self) {
         self.next_offset = 0;
@@ -178,6 +203,10 @@ pub struct Symbol {
 
 impl Symbol {
     pub fn is_temp(&self) -> bool {
+        if self.identifier.len() == 0 {
+            log!("<YASLC/SymbolTable> Warning, found a symbol with an empty identifier. This is bad.");
+            return false;
+        }
         self.identifier.index(0..1) == "$"
     }
 

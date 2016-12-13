@@ -242,6 +242,9 @@ impl ExpressionParser {
 
     /// Reduces the stack of postfix expressions until there is only one remaining.
     fn reduce_expression_stack(mut expressions: Vec<Expression>, mut table: SymbolTable) -> (Option<Symbol>, Vec<String>) {
+        // Move the register up by 1
+        table.up_register();
+
         // Declare the stack and the list of commands
         let mut stack = Vec::<Expression>::new();
         let mut commands = Vec::<String>::new();
@@ -319,13 +322,13 @@ impl ExpressionParser {
     }
 
     fn last_two_expressions(stack: &mut Vec<Expression>) -> Result<(Expression, Expression), String> {
-        let e1 = match stack.pop() {
+        let e2 = match stack.pop() {
             Some(s) => s,
             None => {
                 return Err(format!("<YASLC/ExpressionParser> Error: attempted to reduce expression but there is a missing operand!"));
             }
         };
-        let e2 = match stack.pop() {
+        let e1 = match stack.pop() {
             Some(s) => s,
             None => {
                 return Err(format!("<YASLC/ExpressionParser> Error: attempted to reduce expression but there are two missing operands!"));
@@ -384,7 +387,8 @@ impl ExpressionParser {
         // Find the destination symbol
         let dest = if s1.is_temp() {
             // We can operate on s1
-            s1
+            println!("We can operate on {:?} for expression in place of a temp because it is already a temp!", s1);
+            s1.clone()
         } else {
             // We have to operate on a temp
             //
@@ -403,8 +407,39 @@ impl ExpressionParser {
             TokenType::Star => "mulw",
             TokenType::Keyword(KeywordType::Div) => "divw",
             TokenType::Keyword(KeywordType::Mod) => {
-                // TODO special case
-                "divw"
+                // Special case, will return value for the function
+
+                // Generate temp 1 and 2
+                let temp1 = dest;
+                let temp2 = table.temp();
+
+                // Divide temp1 by s2
+                commands.push(format!("divw +{}@R{} +{}@R{}",
+                    s2.offset(), s2.register(), temp1.offset(), temp1.register()));
+
+                // Multiply temp1 by s2
+                commands.push(format!("mulw +{}@R{} +{}@R{}",
+                    s2.offset(), s2.register(), temp1.offset(), temp1.register()));
+
+                // Move s1 to temp2
+                commands.push(format!("movw +{}@R{} +{}@R{}",
+                    s1.offset(), s1.register(), temp2.offset(), temp2.register()));
+
+                // Subtract temp1 from temp2
+                commands.push(format!("subw +{}@R{} +{}@R{}",
+                    temp1.offset(), temp1.register(), temp2.offset(), temp2.register()));
+
+                // Move temp2 to s1 (dest)
+                commands.push(format!("movw +{}@R{} +{}@R{}",
+                    temp2.offset(), temp2.register(), temp1.offset(), temp1.register()));
+
+                log!("<YASLC/ExpressionParser> Successfully generated 'mod' expression code.");
+
+                // Generate the combined expression
+                let c = Expression::Combined(temp1);
+                stack.push(c);
+
+                return Ok(commands);
             }
             n => panic!("Unrecognized operator '{}' in expression!", n),
         };
@@ -412,6 +447,11 @@ impl ExpressionParser {
         // Perform the operation
         let full_op = format!("{} +{}@R{} +{}@R{}", op, s2.offset(), s2.register(),
             dest.offset(), dest.register());
+
+        for c in commands.iter() {
+            log!("YASLC/ExpressionParser> Generated code for reduction: '{}'", c);
+        }
+        log!("<YASLC/ExpressionParser> Generated operation for reduction: '{}'", full_op);
 
         commands.push(full_op);
 
