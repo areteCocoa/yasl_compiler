@@ -14,7 +14,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 /// Set to true if you want the expression parser to print its process.
-static mut VERBOSE: bool = true;
+static mut VERBOSE: bool = false;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {
@@ -329,11 +329,8 @@ impl ExpressionParser {
         };
 
         // // Now that we have one single expression, move it to the SP
-        if f_symbol.offset() != 0 {
-            let sp_mov = format!("movw +{}@R{} +0@R{}", f_symbol.offset(), f_symbol.register(), f_symbol.register());
-            self.push_command(sp_mov);
-        }
-
+        let sp_mov = format!("movw {} +0@R1", f_symbol.location());
+        self.push_command(sp_mov);
 
         Ok((f_symbol, self.commands))
     }
@@ -401,7 +398,7 @@ impl ExpressionParser {
                 match o_type {
                     OType::Static(l) => {
                         let s = self.table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
-                        self.push_command(format!("movw #{} +{}@R{}", l, s.offset(), s.register()));
+                        self.push_command(format!("movw #{} {}", l, s.location()));
                         Some(s.clone())
                     },
                     OType::Variable(t) => {
@@ -463,7 +460,7 @@ impl ExpressionParser {
                     // It is a constant, initialize to a temp
                     OType::Static(l) => {
                         let temp = self.table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
-                        self.push_command(format!("movw #{} +{}@R{}", l, temp.offset(), temp.register()));
+                        self.push_command(format!("movw #{} {}", l, temp.location()));
                         temp
                     }
                 }
@@ -486,7 +483,7 @@ impl ExpressionParser {
                     // It is a constant, initialize to a temp
                     OType::Static(l) => {
                         let temp = self.table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
-                        self.push_command(format!("movw #{} +{}@R{}", l, temp.offset(), temp.register()));
+                        self.push_command(format!("movw #{} {}", l, temp.location()));
                         temp
                     }
                 }
@@ -500,7 +497,7 @@ impl ExpressionParser {
                 match &s2.symbol_type {
                     &SymbolType::Variable(ref v2) | &SymbolType::Constant(ref v2) => {
                         if v1 != v2 {
-                            println!("s1: {:?}, s2: {:?}", s1.symbol_type, s2.symbol_type);
+                            log!("s1: {:?}, s2: {:?}", s1.symbol_type, s2.symbol_type);
                             return Err(format!("<YASLC/ExpressionParser> Attempted to perform operation on two symbols which don't have the same type!"));
                         }
                     },
@@ -513,7 +510,7 @@ impl ExpressionParser {
         // Find the destination symbol
         let mut dest = if s1.is_temp() {
             // We can operate on s1
-            println!("We can operate on {:?} for expression in place of a temp because it is already a temp!", s1);
+            log!("We can operate on {:?} for expression in place of a temp because it is already a temp!", s1);
             s1.clone()
         } else {
             // We have to operate on a temp
@@ -521,8 +518,7 @@ impl ExpressionParser {
             // Move the value from the first symbol to temp
             let temp = self.table.temp(s1.symbol_type.clone());
             log!("Generated temp symbol {:?} for expression.", temp);
-            let mov = format!("movw +{}@R{} +{}@R{}", s1.offset(), s1.register(),
-                temp.offset(), temp.register());
+            let mov = format!("movw {} {}", s1.location(), temp.location());
             self.push_command(mov);
             temp
         };
@@ -542,26 +538,19 @@ impl ExpressionParser {
                 let temp2 = self.table.temp(s2.symbol_type.clone());
 
                 // Divide temp1 by s2
-                self.push_command(format!("divw +{}@R{} +{}@R{}",
-                    s2.offset(), s2.register(), temp1.offset(), temp1.register()));
+                self.push_command(format!("divw {} {}", s2.location(), temp1.location()));
 
                 // Multiply temp1 by s2
-                self.push_command(format!("mulw +{}@R{} +{}@R{}",
-                    s2.offset(), s2.register(), temp1.offset(), temp1.register()));
+                self.push_command(format!("mulw {} {}", s2.location(), temp1.location()));
 
                 // Move s1 to temp2
-                self.push_command(format!("movw +{}@R{} +{}@R{}",
-                    s1.offset(), s1.register(), temp2.offset(), temp2.register()));
+                self.push_command(format!("movw {} {}", s1.location(), temp2.location()));
 
                 // Subtract temp1 from temp2
-                self.push_command(format!("subw +{}@R{} +{}@R{}",
-                    temp1.offset(), temp1.register(), temp2.offset(), temp2.register()));
+                self.push_command(format!("subw {} {}", temp1.location(), temp2.location()));
 
                 // Move temp2 to s1 (dest)
-                self.push_command(format!("movw +{}@R{} +{}@R{}",
-                    temp2.offset(), temp2.register(), temp1.offset(), temp1.register()));
-
-
+                self.push_command(format!("movw {} {}", temp2.location(), temp1.location()));
 
                 // Generate the combined expression
                 let c = Expression::Combined(temp1);
@@ -678,12 +667,11 @@ impl ExpressionParser {
 
         // Push the combination expression to the stack
         let c = Expression::Combined(dest.clone());
-        println!("Got the combined expression {}", c);
+        log!("Got the combined expression {}", c);
         self.stack.push(c);
 
         // Perform the operation
-        let full_op = format!("{} +{}@R{} +{}@R{}", op, s2.offset(), s2.register(),
-            dest.offset(), dest.register());
+        let full_op = format!("{} {} {}", op, s2.location(), dest.location());
 
         log!("<YASLC/ExpressionParser> Generated operation for reduction: '{}'", full_op);
 

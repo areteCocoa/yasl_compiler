@@ -17,6 +17,14 @@ macro_rules! log {
             }
         }
     };
+
+    (NNL $message:expr $(,$arg:expr)*) => {
+        unsafe {
+            if VERBOSE == true {
+                print!($message, $($arg,)*);
+            }
+        }
+    }
 }
 
 ///
@@ -30,10 +38,9 @@ pub struct SymbolTable {
 
     old_table: Option<Box<SymbolTable>>,
 
-    // A list of offsets per register
-    register_saves: Vec<(u32, u32)>,
+    register: Option<String>,
 
-    register: u32,
+    register_n: u32,
 
     next_offset: u32,
 
@@ -54,8 +61,8 @@ impl SymbolTable {
         SymbolTable {
             symbols: Vec::<Symbol>::new(),
             old_table: None,
-            register_saves: Vec::<(u32, u32)>::new(),
-            register: 0,
+            register: None,
+            register_n: 0,
             next_offset: 0,
             next_temp: 0,
             next_bool_temp: 0,
@@ -69,7 +76,7 @@ impl SymbolTable {
     fn child_table(self) -> SymbolTable {
         log!("<YASLC/SymbolTable> Creating child symbol table for table to create new scope.");
 
-        let register = self.register;
+        let register_n = self.register_n;
         let n_o = self.next_offset;
         let n_t = self.next_temp;
         let n_bt = self.next_bool_temp;
@@ -82,8 +89,8 @@ impl SymbolTable {
         SymbolTable {
             symbols: Vec::<Symbol>::new(),
             old_table: Some(pointer_old),
-            register_saves: Vec::<(u32, u32)>::new(),
-            register: register,
+            register: None,
+            register_n: register_n,
             next_offset: n_o,
             next_temp: n_t,
             next_bool_temp: n_bt,
@@ -106,22 +113,33 @@ impl SymbolTable {
             self.proc_stack.push(identifier.clone());
         }
 
+        let r = match self.register {
+            Some(ref r) => {
+                Some(r.clone())
+            },
+            None => None,
+        };
+
         let o = self.next_offset.clone();
+
+        if t != SymbolType::Procedure {
+            self.next_offset += 4;
+        }
+
         self.add_symbol(Symbol{
             identifier: identifier,
             symbol_type: t,
-            register: 0,
+            register: r,
+            register_n: 0,
             offset: o,
         });
-
-        self.next_offset += 4;
     }
 
     /// Adds (binds) a new symbol to the table
     fn add_symbol(&mut self, s: Symbol) {
         self.symbols.insert(0, s);
         log!("<YASLC/SymbolTable> Added new symbol to table, printing...");
-        self.print_table();
+        self.log_table();
     }
 
     /// Get (lookup) a symbol on the table
@@ -145,10 +163,20 @@ impl SymbolTable {
         self.child_table()
     }
 
+    pub fn enter_proc(self) -> SymbolTable {
+        let mut c = self.enter();
+
+        c.register = Some(format!("FP"));
+        c.next_offset = 0;
+        c.register_n = 0;
+
+        c
+    }
+
     /// Exits the current table, returning the previous
     pub fn exit(self) -> Option<SymbolTable> {
         log!("Table attempting to exit and dereference itself. Printing table.");
-        self.print_table();
+        self.log_table();
 
         let proc_t = self.proc_stack;
 
@@ -171,7 +199,8 @@ impl SymbolTable {
             identifier: name,
             symbol_type: s_type,
             offset: self.next_offset,
-            register: 1,
+            register_n: 1,
+            register: self.register.clone(),
         };
 
         self.next_temp += 1;
@@ -184,9 +213,8 @@ impl SymbolTable {
 
     pub fn up_register(&mut self) {
         let prev = (self.next_offset, self.next_temp);
-        self.register_saves.push(prev);
 
-        self.register += 1;
+        self.register_n += 1;
         self.next_offset = 0;
         self.next_temp = 0;
     }
@@ -207,17 +235,17 @@ impl SymbolTable {
     }
 
     // pub fn down_register(&mut self) {
-    //     if self.register <= 0 {
-    //         panic!("<YASLC/SymbolTable> Internal error: attempted to move down a register when we were already at 0!");
+    //     if self.register_n <= 0 {
+    //         panic!("<YASLC/SymbolTable> Internal error: attempted to move down a register_n when we were already at 0!");
     //     }
-    //     self.register -= 1;
+    //     self.register_n -= 1;
     //
     //     match self.register_saves.pop() {
     //         Some((offset, temp)) => {
     //             self.next_offset = offset;
     //             self.next_temp = temp;
     //         },
-    //         None => panic!("<YASLC/SymbolTable> Tried to move down a register but we did not have save data for the previous register!"),
+    //         None => panic!("<YASLC/SymbolTable> Tried to move down a register_n but we did not have save data for the previous register_n!"),
     //     }
     // }
 
@@ -234,10 +262,6 @@ impl SymbolTable {
         return self.proc_stack[self.proc_stack.len() - 1].clone();
     }
 
-    pub fn pop_proc(&mut self) {
-        self.proc_stack.pop();
-    }
-
     /// Prints the table's sub-tables and then itself.
     fn print_table(&self) {
         if let Some(ref b) = self.old_table {
@@ -252,10 +276,24 @@ impl SymbolTable {
 
         println!("]");
     }
+
+    fn log_table(&self) {
+        if let Some(ref b) = self.old_table {
+            b.log_table();
+        }
+
+        log!(NNL "Table: [");
+
+        for s in self.symbols.iter() {
+            log!(NNL "{}, ", s.identifier);
+        }
+
+        log!("]");
+    }
 }
 
 
-/// A single symbol with an identifier, offset on the stack and register, as well as a type.
+/// A single symbol with an identifier, offset on the stack and register_n, as well as a type.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Symbol {
     /// The identifier for this symbol.
@@ -267,21 +305,27 @@ pub struct Symbol {
     /// The offest for this symbol.
     offset: u32,
 
-    /// The register for which to offset from for this symbol.
-    register: u32,
+    register: Option<String>,
+
+    /// The register_n for which to offset from for this symbol.
+    register_n: u32,
 }
 
 impl Symbol {
     pub fn is_temp(&self) -> bool {
         if self.identifier.len() == 0 {
-            panic!("<YASLC/SymbolTable> Warning, found a symbol with an empty identifier. This is bad.");
+            println!("<YASLC/SymbolTable> Warning, found a symbol with an empty identifier. This is bad.");
             return false;
         }
         self.identifier.index(0..1) == "$"
     }
 
     pub fn location(&self) -> String {
-        format!("+{}@R{}", self.offset, self.register)
+        let r = match self.register.clone() {
+            Some(s) => s,
+            None => format!("R{}", self.register_n),
+        };
+        format!("+{}@{}", self.offset, &r)
     }
 
     pub fn identifier(&self) -> &String {
@@ -298,18 +342,6 @@ impl Symbol {
             SymbolType::Constant(_) => SymbolType::Constant(v_type),
             _ => panic!("Attempted to set value type for a procedure!"),
         };
-    }
-
-    pub fn offset(&self) -> u32 {
-        self.offset.clone()
-    }
-
-    pub fn register(&self) -> u32 {
-        self.register.clone()
-    }
-
-    pub fn set_register(&mut self, register: u32) {
-        self.register = register;
     }
 }
 

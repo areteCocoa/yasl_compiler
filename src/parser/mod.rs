@@ -16,7 +16,7 @@ use self::file_generator::file_from;
 use self::expression::ExpressionParser;
 
 /// Set true if you want the parser to log all its progress, false otherwise.
-static mut VERBOSE: bool = true;
+static mut VERBOSE: bool = false;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {
@@ -137,7 +137,7 @@ impl Parser {
             ParserState::Done(r) => {
                 match r {
                     ParserResult::Success => {
-                        println!("<YASLC/Parser> Correctly parsed YASL program file.");
+                        log!("<YASLC/Parser> Correctly parsed YASL program file.");
 
                         // Get the number of declarations
                         let n_decl = self.declarations.len();
@@ -299,30 +299,40 @@ impl Parser {
     fn block (&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting BLOCK rule.");
 
+        let proc_t = self.symbol_table.current_proc();
+
+        if self.commands.prefix.is_some() {
+            self.commands.push_useless();
+        }
+
+        if proc_t != "mainblock" {
+            self.push_command(format!(": Block {}", proc_t));
+            self.commands.set_prefix(format!("${}", proc_t));
+        }
+
         c_exp!(self.consts());
         c_exp!(self.vars());
 
-        let proc_t = self.symbol_table.current_proc();
-
-        self.push_command(format!(": Jump to block {} of execution", proc_t));
-        self.push_command(format!("jmp ${}", proc_t));
-        self.push_command(format!(""));
+        if proc_t == "mainblock" {
+            self.push_command(format!(": Jump to block {} of execution", proc_t));
+            self.push_command(format!("jmp ${}", proc_t));
+            self.push_command(format!(""));
+        }
 
         c_exp!(self.procs());
 
-        self.commands.set_prefix(format!(""));
-        self.push_command(format!(": Block {}", proc_t));
-        self.commands.set_prefix(format!("${}", proc_t));
-
         c_token!(self, TokenType::Keyword(KeywordType::Begin));
+        if proc_t == "mainblock" {
+            self.push_command(format!(": Block {}", proc_t));
+            self.commands.set_prefix(format!("${}", proc_t));
+        }
 
         c_exp!(self.statements());
 
         match self.check(TokenType::Keyword(KeywordType::End)) {
             ParserState::Continue => {
                 if proc_t != "mainblock" {
-                    self.push_command(format!("ret"));
-                    self.symbol_table.pop_proc();
+                    self.push_command(format!("ret\n: end {}\n", proc_t));
                 }
 
                 ParserState::Continue
@@ -395,7 +405,12 @@ impl Parser {
         match self.symbol_table.get(&*id) {
             Some(s) => {
                 // If it is a constant then set the value
-                self.declarations.push(format!("movw #{} +{}@R{}", v, s.offset(), s.register()));
+                let c = format!("movw #{} {}", v, s.location());
+                if self.symbol_table.current_proc() == "mainblock" {
+                    self.declarations.push(c);
+                } else {
+                    self.commands.push_command(format!("movw #{} {}", v, s.location()));
+                }
             },
             None => {
                 panic!("Internal error with the symbol table.");
@@ -460,7 +475,7 @@ impl Parser {
         match self.symbol_table.get(&*id) {
             Some(s) => {
                 // Initialize the value as 0
-                self.declarations.push(format!("movw #0 +{}@R{}", s.offset(), s.register()));
+                self.declarations.push(format!("movw #0 {}", s.location()));
             },
             None => {
                 panic!("Internal error with the symbol table.");
@@ -498,12 +513,14 @@ impl Parser {
     fn token_proc(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting PROC rule.");
 
-        self.symbol_table = self.symbol_table.clone().enter();
+        //let t = self.symbol_table.temp(SymbolType::Variable(SymbolValueType::Int));
 
         match self.check(TokenType::Keyword(KeywordType::Proc)) {
             ParserState::Continue => ParserState::Continue,
             _ => return ParserState::Done(ParserResult::Incorrect),
         };
+
+        self.symbol_table = self.symbol_table.clone().enter_proc();
 
         let id = match self.check(TokenType::Identifier) {
             ParserState::Continue => {
@@ -526,7 +543,9 @@ impl Parser {
         };
 
         self.symbol_table = match self.symbol_table.clone().exit(){
-            Some(s) => s,
+            Some(s) => {
+                s
+            }
             None => {
                 panic!("<YASLC/Parser> A symbol table has been popped where it shouldn't have been and we're in big trouble.");
             }
@@ -887,7 +906,7 @@ impl Parser {
 
                         // Add the command
                         // TODO: If you wanted to use more registers, this would need to be overriden to use f.register
-                        self.push_command(format!("movw +0@R1 +{}@R{}", id_symbol.offset(), id_symbol.register()));
+                        self.push_command(format!("movw +0@R1 {}", id_symbol.location()));
 
                         return ParserState::Continue;
                     },
@@ -923,6 +942,7 @@ impl Parser {
                     ParserState::Continue => {
                         // Call the procedure
                         self.push_command(format!("call #{} ${}", 0, id));
+                        // TODO: Move the SP, push arguments, etc
                     },
                     _ => {
                         // Check if it is an end token
@@ -930,8 +950,10 @@ impl Parser {
                         match self.check(TokenType::Keyword(KeywordType::End)) {
                             ParserState::Continue => {
                                 self.insert_last_token();
-                                // Execute the proc
+
+                                // Call the proc
                                 self.push_command(format!("call #{} ${}", 0, id));
+                                // TODO: Move the SP, push arguments, etc
                             },
                             x => return x,
                         };
@@ -1006,7 +1028,7 @@ impl Parser {
                     return ParserState::Done(ParserResult::Unexpected);
                 };
 
-                self.push_command(format!("outw +{}@R{}", f.offset(), f.register()));
+                self.push_command(format!("outw {}", f.location()));
                 self.push_command(format!("outb #10"));
 
                 self.last_expression = None;
@@ -1020,6 +1042,9 @@ impl Parser {
     fn expression(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting EXPRESSION rule.");
 
+        if self.commands.prefix.is_none() {
+            self.push_command(format!(""));
+        }
         self.push_command(format!("movw SP R1"));
 
         let mut stack = Vec::<Token>::new();
@@ -1147,21 +1172,25 @@ impl CommandBuilder {
         prefix
     }
 
-    fn prepend_last(&mut self, prefix: String) {
-        let old = match self.commands.pop() {
-            Some(s) => {
-                s
-            },
-            None => {
-                log!("Warning: Command builder tried to prepend the last command but there was none! Setting prefix...");
-                self.set_prefix(prefix);
-                return;
-            }
-        };
-
-        let new = format!("{}{}", prefix, old);
-        self.commands.push(new);
+    fn push_useless(&mut self) {
+        self.push_command(format!("movw R0 R0"));
     }
+
+    // fn prepend_last(&mut self, prefix: String) {
+    //     let old = match self.commands.pop() {
+    //         Some(s) => {
+    //             s
+    //         },
+    //         None => {
+    //             log!("Warning: Command builder tried to prepend the last command but there was none! Setting prefix...");
+    //             self.set_prefix(prefix);
+    //             return;
+    //         }
+    //     };
+    //
+    //     let new = format!("{}{}", prefix, old);
+    //     self.commands.push(new);
+    // }
 
     fn push_builder(&mut self, builder: CommandBuilder) {
         for c in builder.commands {
