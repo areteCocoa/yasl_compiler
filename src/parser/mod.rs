@@ -125,8 +125,6 @@ impl Parser {
 
             symbol_table: SymbolTable::empty(),
 
-            //stack: Vec::<Token>::new(),
-
             commands: CommandBuilder::new(),
 
             declarations: Vec::<String>::new(),
@@ -303,14 +301,34 @@ impl Parser {
 
         c_exp!(self.consts());
         c_exp!(self.vars());
+
+        let proc_t = self.symbol_table.current_proc();
+
+        self.push_command(format!(": Jump to block {} of execution", proc_t));
+        self.push_command(format!("jmp ${}", proc_t));
+        self.push_command(format!(""));
+
         c_exp!(self.procs());
+
+        self.commands.set_prefix(format!(""));
+        self.push_command(format!(": Block {}", proc_t));
+        self.commands.set_prefix(format!("${}", proc_t));
 
         c_token!(self, TokenType::Keyword(KeywordType::Begin));
 
         c_exp!(self.statements());
-        c_token!(self, TokenType::Keyword(KeywordType::End),
-            ParserState::Done(ParserResult::Unexpected),
-            ParserState::Continue)
+
+        match self.check(TokenType::Keyword(KeywordType::End)) {
+            ParserState::Continue => {
+                if proc_t != "mainblock" {
+                    self.push_command(format!("ret"));
+                    self.symbol_table.pop_proc();
+                }
+
+                ParserState::Continue
+            },
+            x => x,
+        }
     }
 
     /*
@@ -818,6 +836,7 @@ impl Parser {
         // Get the identifier
         let id = self.last_token().unwrap().lexeme();
 
+        // Are we assigning?
         match self.check(TokenType::Assign) {
             ParserState::Continue => {
                 match self.expression() {
@@ -878,10 +897,10 @@ impl Parser {
             _ => {},
         };
 
+        // All execution around assigning does not reach this point.
         self.insert_last_token();
 
-        // We're dealing with a proc that has arguments
-
+        // We're dealing with a proc that may have arguments
         match self.check(TokenType::LeftParen) {
             ParserState::Continue => {
                 match self.expression() {
@@ -897,7 +916,28 @@ impl Parser {
                 return self.check(TokenType::RightParen);
             }
 
-            _ => {},
+            _ => {
+                // It does not, but it should have a semi
+                self.insert_last_token();
+                match self.check(TokenType::Semicolon) {
+                    ParserState::Continue => {
+                        // Call the procedure
+                        self.push_command(format!("call #{} ${}", 0, id));
+                    },
+                    _ => {
+                        // Check if it is an end token
+                        self.insert_last_token();
+                        match self.check(TokenType::Keyword(KeywordType::End)) {
+                            ParserState::Continue => {
+                                self.insert_last_token();
+                                // Execute the proc
+                                self.push_command(format!("call #{} ${}", 0, id));
+                            },
+                            x => return x,
+                        };
+                    }
+                };
+            },
         };
 
         self.insert_last_token();
@@ -1008,6 +1048,12 @@ impl Parser {
     }
 
     fn parse_expression_tokens(&mut self, tokens: Vec<Token>) -> ParserState {
+        let mut comment = String::new();
+        comment.push_str(&*"expression: ");
+        for t in tokens.iter() {
+            comment.push_str(&*format!("{} ", t.lexeme()));
+        }
+
         match ExpressionParser::new(self.symbol_table.clone(), tokens) {
             Some(e) => {
                 log!("<YASLC/Parser> Expression parser successfully exited!");
@@ -1017,7 +1063,7 @@ impl Parser {
                     Ok((f_symbol, commands)) => {
                         let _ = self.symbol_table.bool_temp();
 
-                        self.commands.push_command(format!(": expression"));
+                        self.commands.push_command(format!(": {}", comment));
 
                         // Add the commands to this list of commands
                         self.commands.push_builder(commands);

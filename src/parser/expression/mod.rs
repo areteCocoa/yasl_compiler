@@ -301,6 +301,26 @@ impl ExpressionParser {
     }
 
     pub fn parse(mut self) -> Result<(Symbol, CommandBuilder), String> {
+        if self.expressions.len() == 1 {
+            match self.expressions.remove(0) {
+                Expression::Operand(o_type) => {
+                    match o_type {
+                        OType::Variable(l) => {
+                            let f_symbol = self.table.get(&*l).unwrap();
+                            return Ok((f_symbol.clone(), self.commands));
+                            // self.commands.push_command(format!("movw "))
+                        },
+                        OType::Static(l) => {
+                            let t = self.table.temp(SymbolType::Constant(type_for_string(&l).unwrap()));
+                            self.commands.push_command(format!("movw #{} +0@R1", l));
+                            return Ok((t, self.commands));
+                        }
+                    }
+                },
+                _ => {},
+            };
+        }
+
         let f_symbol = match self.reduce_expression_stack() {
             Some(s) => s,
             None => {

@@ -7,7 +7,7 @@
 use std::ops::Index;
 
 /// Set to true if you want the logs of symbol functionality, false otherwise.
-static mut VERBOSE: bool = true;
+static mut VERBOSE: bool = false;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {
@@ -45,7 +45,7 @@ pub struct SymbolTable {
 
     next_while_temp: u32,
 
-    next_proc_temp: u32,
+    proc_stack: Vec<String>,
 }
 
 impl SymbolTable {
@@ -61,7 +61,7 @@ impl SymbolTable {
             next_bool_temp: 0,
             next_if_temp: 0,
             next_while_temp: 0,
-            next_proc_temp: 0,
+            proc_stack: Vec::<String>::new(),
         }
     }
 
@@ -75,7 +75,7 @@ impl SymbolTable {
         let n_bt = self.next_bool_temp;
         let n_it = self.next_if_temp;
         let n_wt = self.next_while_temp;
-        let n_pt = self.next_proc_temp;
+        let ps = self.proc_stack.clone();
 
         let pointer_old = Box::<SymbolTable>::new(self);
 
@@ -89,7 +89,7 @@ impl SymbolTable {
             next_bool_temp: n_bt,
             next_if_temp: n_it,
             next_while_temp: n_wt,
-            next_proc_temp: n_pt,
+            proc_stack: ps,
         }
     }
 
@@ -99,6 +99,11 @@ impl SymbolTable {
             if s.identifier == identifier {
                 panic!("<YASLC/SymbolTable> Error: Attempted to insert symbol that already exists in the scope!");
             }
+        }
+
+        if t == SymbolType::Procedure {
+            log!("Found a procedure!");
+            self.proc_stack.push(identifier.clone());
         }
 
         let o = self.next_offset.clone();
@@ -145,8 +150,14 @@ impl SymbolTable {
         log!("Table attempting to exit and dereference itself. Printing table.");
         self.print_table();
 
+        let proc_t = self.proc_stack;
+
         match self.old_table {
-            Some(b) => Some(*b),
+            Some(b) => {
+                let mut old = *b;
+                old.proc_stack = proc_t;
+                Some(old)
+            },
             None => None
         }
     }
@@ -195,24 +206,36 @@ impl SymbolTable {
         self.next_while_temp - 1
     }
 
-    pub fn down_register(&mut self) {
-        if self.register <= 0 {
-            panic!("<YASLC/SymbolTable> Internal error: attempted to move down a register when we were already at 0!");
-        }
-        self.register -= 1;
-
-        match self.register_saves.pop() {
-            Some((offset, temp)) => {
-                self.next_offset = offset;
-                self.next_temp = temp;
-            },
-            None => panic!("<YASLC/SymbolTable> Tried to move down a register but we did not have save data for the previous register!"),
-        }
-    }
+    // pub fn down_register(&mut self) {
+    //     if self.register <= 0 {
+    //         panic!("<YASLC/SymbolTable> Internal error: attempted to move down a register when we were already at 0!");
+    //     }
+    //     self.register -= 1;
+    //
+    //     match self.register_saves.pop() {
+    //         Some((offset, temp)) => {
+    //             self.next_offset = offset;
+    //             self.next_temp = temp;
+    //         },
+    //         None => panic!("<YASLC/SymbolTable> Tried to move down a register but we did not have save data for the previous register!"),
+    //     }
+    // }
 
     /// Resets the next_offset property.
     pub fn reset_offset(&mut self) {
         self.next_offset = 0;
+    }
+
+    pub fn current_proc(&self) -> String {
+        if self.proc_stack.len() == 0 {
+            return format!("mainblock");
+        }
+
+        return self.proc_stack[self.proc_stack.len() - 1].clone();
+    }
+
+    pub fn pop_proc(&mut self) {
+        self.proc_stack.pop();
     }
 
     /// Prints the table's sub-tables and then itself.
