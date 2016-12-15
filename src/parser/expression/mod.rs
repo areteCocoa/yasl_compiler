@@ -267,6 +267,8 @@ pub struct ExpressionParser {
     /// The list of commands to be pushed onto the program given this expression.
     commands: Vec<String>,
 
+    prefix: Option<String>,
+
     expressions: Vec<Expression>,
 
     // The stack used when reducing the expression to one symbol
@@ -293,6 +295,7 @@ impl ExpressionParser {
 
         Some(ExpressionParser {
             commands: Vec::<String>::new(),
+            prefix: None,
             expressions: postfix_exp,
             stack: Vec::<Expression>::new(),
             table: table,
@@ -345,7 +348,8 @@ impl ExpressionParser {
             match self.handle_expression(e) {
                 Ok(_) => {},
                 Err(error) => {
-                    panic!("<YASLC/ExpressionParser> Error handling expression: {}", error);
+                    println!("<YASLC/ExpressionParser> Error handling expression: {}", error);
+                    return None;
                 }
             };
 
@@ -473,9 +477,20 @@ impl ExpressionParser {
             _ => panic!("Found an operator where we were expecting an operand!"),
         };
 
-        if s1.symbol_type != s2.symbol_type {
-            return Err(format!("<YASLC/ExpressionParser> Attempted to perform operation on two symbols which don't have the same type!"));
-        }
+        match &s1.symbol_type {
+            &SymbolType::Variable(ref v1) | &SymbolType::Constant(ref v1) => {
+                match &s2.symbol_type {
+                    &SymbolType::Variable(ref v2) | &SymbolType::Constant(ref v2) => {
+                        if v1 != v2 {
+                            println!("s1: {:?}, s2: {:?}", s1.symbol_type, s2.symbol_type);
+                            return Err(format!("<YASLC/ExpressionParser> Attempted to perform operation on two symbols which don't have the same type!"));
+                        }
+                    },
+                    _ => {}
+                }
+            },
+            _ => {}
+        };
 
         // Find the destination symbol
         let mut dest = if s1.is_temp() {
@@ -487,13 +502,14 @@ impl ExpressionParser {
             //
             // Move the value from the first symbol to temp
             let temp = self.table.temp(s1.symbol_type.clone());
+            log!("Generated temp symbol {:?} for expression.", temp);
             let mov = format!("movw +{}@R{} +{}@R{}", s1.offset(), s1.register(),
                 temp.offset(), temp.register());
             self.push_command(mov);
             temp
         };
 
-        // Determine the operator given the token type
+        // Determine the operator string given the token type
         let op = match t_type {
             TokenType::Plus => "addw",
             TokenType::Minus => "subw",
@@ -501,6 +517,7 @@ impl ExpressionParser {
             TokenType::Keyword(KeywordType::Div) => "divw",
             TokenType::Keyword(KeywordType::Mod) => {
                 // Special case, will return value for the function
+                log!("Reducing using Mod and special commands for that.");
 
                 // Generate temp 1 and 2
                 let temp1 = dest;
@@ -537,6 +554,8 @@ impl ExpressionParser {
 
             TokenType::GreaterThan | TokenType::LessThan | TokenType::GreaterThanOrEqual
             | TokenType::LessThanOrEqual | TokenType::EqualTo | TokenType::NotEqualTo  => {
+                log!("Reducing using a boolean expression.");
+
                 // if we have == or <> check that it is NOT boolean type
                 if t_type == TokenType::EqualTo || t_type == TokenType::NotEqualTo {
                     let vt = match s1.symbol_type() {
@@ -584,6 +603,7 @@ impl ExpressionParser {
             },
 
             TokenType::Keyword(KeywordType::And) | TokenType::Keyword(KeywordType::Or) => {
+                log!("Reducing using 'and/or' special case.");
                 let vt = match s1.symbol_type() {
                     &SymbolType::Variable(ref vt) | &SymbolType::Constant(ref vt) => {
                         vt
@@ -639,6 +659,7 @@ impl ExpressionParser {
 
         // Push the combination expression to the stack
         let c = Expression::Combined(dest.clone());
+        println!("Got the combined expression {}", c);
         self.stack.push(c);
 
         // Perform the operation
@@ -698,7 +719,7 @@ impl ExpressionParser {
 
                 match reduce_result {
                     Ok(_) => Ok(()),
-                    Err(e) => panic!("Error while reducing expression stack: {}", e),
+                    Err(e) => return Err(format!("Error while reducing expression stack: {}", e)),
                 }
             },
             Expression::Combined(_) => {
@@ -717,7 +738,7 @@ impl ExpressionParser {
             // Get the front token
             let t = tokens.remove(0);
 
-            log!("<YASLC/ExpressionParser> Popped token for conversion to expression: {}",t);
+            log!("<YASLC/ExpressionParser> Popped token for conversion to expression: {}", t);
 
             // Attempt to convert it to an expression
             if let Some(e) = Expression::from_token(t.clone()) {
@@ -771,7 +792,7 @@ impl ExpressionParser {
                 }
             }
         }
-        
+
         while let Some(o) = op_stack.pop() {
             stack.push(o);
         }

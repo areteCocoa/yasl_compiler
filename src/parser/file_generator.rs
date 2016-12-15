@@ -10,7 +10,7 @@ use std::io;
 /// Generates a file given the list of commands and list of declarations and returns the
 /// io::Result, containing Ok(file) if it was successful and Err(e) if it was not.
 pub fn file_from(commands: Vec<String>) -> io::Result<File> {
-    let mut f = try!(File::create("out.yasl"));
+    let mut f = try!(File::create("out.pal"));
 
     for c in commands {
         match f.write_fmt(format_args!("{}\n", c)) {

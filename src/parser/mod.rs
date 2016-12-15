@@ -16,7 +16,7 @@ use self::file_generator::file_from;
 use self::expression::ExpressionParser;
 
 /// Set true if you want the parser to log all its progress, false otherwise.
-static mut VERBOSE: bool = false;
+static mut VERBOSE: bool = true;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {
@@ -102,7 +102,7 @@ pub struct Parser {
     //stack: Vec<Token>,
 
     /// The vector of strings for output to the file.
-    commands: Vec<String>,
+    commands: CommandBuilder,
 
     /// A vector of declarations for output to the file.
     declarations: Vec<String>,
@@ -127,7 +127,7 @@ impl Parser {
 
             //stack: Vec::<Token>::new(),
 
-            commands: Vec::<String>::new(),
+            commands: CommandBuilder::new(),
 
             declarations: Vec::<String>::new(),
         }
@@ -148,18 +148,11 @@ impl Parser {
                         self.declarations.push(format!("addw #{}, SP", n_decl * 4));
 
                         // Create one list of commands
-                        self.declarations.append(&mut self.commands);
+                        self.declarations.append(&mut self.commands.commands);
 
-                        // "Fix" file with things that can be incorrect when assembling
-
-                        // Fix the first command to start with $main
-                        let first = match self.declarations.get(0) {
-                            Some(s) => s.clone(),
-                            None => panic!("Attempted to prepend the first command but there is no first command!"),
-                        };
-                        let new_first = format!("$main {}", first);
-
-                        self.declarations[0] = new_first;
+                        // "Fix" commands with prepends and appends
+                        self.declarations.insert(0, format!("$main movw SP R0"));
+                        self.declarations.insert(0, format!("$junk #1"));
 
                         match file_from(self.declarations.clone()) {
                             Ok(f) => {
@@ -198,6 +191,9 @@ impl Parser {
 
     /// Pops the front token off the stack of tokens and returns it.
     fn next_token(&mut self) -> Token {
+        if self.tokens.len() == 0 {
+            panic!("Unexpected end of file!");
+        }
         let t = self.tokens.remove(0);
 
         self.last_token = Some(t.clone());
@@ -254,9 +250,13 @@ impl Parser {
     }
 
     /// Adds the string command to the list of commands.
-    fn add_command(&mut self, command: &str) {
+    fn push_command(&mut self, command: String) {
         log!("<YASLC/Parser> Adding command to list of output: \'{}\'", command);
-        self.commands.push(command.to_string());
+        self.commands.push_command(command);
+    }
+
+    fn push_prefix(&mut self, prefix: String) -> String {
+        self.commands.set_prefix(prefix)
     }
 
     /// Adds the print command, which is a series of single character outputs.
@@ -264,15 +264,11 @@ impl Parser {
         let mut i = 0;
         for c in print_message.chars() {
             if i != 0 && i != print_message.len()-1 {
-                // TODO: What is the pre-symbol for literal non-alphabet characters?
-
-                // Check if it is a number
-                let com = format!("outb #{}", c as u8);
-
-                self.add_command(&*com);
+                self.push_command(format!("outb #{}", c as u8));
             }
             i += 1;
         }
+        self.push_command(format!("outb #10"));
     }
 
     /**
@@ -293,7 +289,8 @@ impl Parser {
 
         c_token!(self, TokenType::Period, ParserState::Continue, {
             log!("<YASLC/Parser> Exiting Parser because we found the final period.");
-            self.add_command("end");
+            self.push_command(format!("inb $junk"));
+            self.push_command(format!("end"));
             ParserState::Done(ParserResult::Success)
         })
     }
@@ -693,23 +690,30 @@ impl Parser {
                         // Check if we're taking input or not
 
                         // Get the variable, whether it's junk or an actual varible
-                        let v = match self.last_token() {
+                        let (c, v) = match self.last_token() {
                             Some(t) => {
                                 // If there's a value then we successfully parsed the Identifier
                                 log!("<YASLC/Parser> Parsed PROMPT with identifier, adding to compiled file.");
-                                format!("${}", t.lexeme())
+                                match self.symbol_table.get(&*t.lexeme()) {
+                                    Some(s) => {
+                                        ("inw", s.location())
+                                    },
+                                    None => {
+                                        ("inb", format!("$junk"))
+                                    }
+                                }
                             },
                             None => {
                                 // If there's no value, we have no identifier
                                 log!("<YASLC/Parser> Parsed PROMPT without identifier, using $junk and adding to compiled file.");
-                                "$junk".to_string()
+                                ("inb", format!("$junk"))
                             }
                         };
 
                         // Prompt for the variable
                         log!("<YASLC/Parser> Adding prompt command for variable {}", v);
 
-                        self.add_command(&*format!("inw {}", v));
+                        self.push_command(format!("{} {}", c, v));
 
                         return ParserState::Continue;
                     },
@@ -798,14 +802,25 @@ impl Parser {
                         }
 
                         // Check that we're assigning to the same type
-                        if id_symbol.symbol_type != f.symbol_type {
-                            println!("<YASLC/Parser> Attempted to assign a value to a variable who's type is not the same!");
-                            println!("<YASLC/Parser> Variable is type {:?} and value is type {:?}.", id_symbol.symbol_type, f.symbol_type);
-                            return ParserState::Done(ParserResult::Unexpected)
-                        }
+                        match &id_symbol.symbol_type {
+                            &SymbolType::Variable(ref v1) | &SymbolType::Constant(ref v1) => {
+                                match &f.symbol_type {
+                                    &SymbolType::Variable(ref v2) | &SymbolType::Constant(ref v2) => {
+                                        if v1 != v2 {
+                                            println!("<YASLC/Parser> Attempted to assign a value to a variable who's type is not the same!");
+                                            println!("<YASLC/Parser> Variable is type {:?} and value is type {:?}.", id_symbol.symbol_type, f.symbol_type);
+                                            return ParserState::Done(ParserResult::Unexpected)
+                                        }
+                                    },
+                                    _ => {}
+                                }
+                            },
+                            _ => {}
+                        };
 
                         // Add the command
-                        self.add_command(&*format!("movw +0@R{} +{}@R{}", f.register(), id_symbol.offset(), id_symbol.register()));
+                        // TODO: If you wanted to use more registers, this would need to be overriden to use f.register
+                        self.push_command(format!("movw +0@R1 +{}@R{}", id_symbol.offset(), id_symbol.register()));
 
                         return ParserState::Continue;
                     },
@@ -903,7 +918,8 @@ impl Parser {
                     return ParserState::Done(ParserResult::Unexpected);
                 };
 
-                self.add_command(&*format!("outw +{}@R{}", f.offset(), f.register()));
+                self.push_command(format!("outw +{}@R{}", f.offset(), f.register()));
+                self.push_command(format!("outb #10"));
 
                 self.last_expression = None;
 
@@ -916,45 +932,23 @@ impl Parser {
     fn expression(&mut self) -> ParserState {
         log!("<YASLC/Parser> Starting EXPRESSION rule.");
 
-        self.add_command("movw SP R1");
+        self.push_command(format!("movw SP R1"));
 
         let mut stack = Vec::<Token>::new();
 
         while self.tokens.is_empty() == false {
             let t = self.tokens.remove(0);
-            match self.check_token(TokenType::Semicolon, t.clone()) {
-                // If it is a semicolon next token
-                ParserState::Continue => {
-                    log!("<YASLC/Parser> Exiting EXPRESSION rule because we found the SEMI token.");
+            match t.token_type() {
+                TokenType::Semicolon | TokenType::Keyword(KeywordType::Do)
+                | TokenType::Keyword(KeywordType::Then) | TokenType::Keyword(KeywordType::End)
+                | TokenType::RightParen => {
+                    // We can exit because it is the end of the expression
+                    log!("<YASLC/Parser> Exiting EXPRESSION rule because we found a {} token.", t);
 
                     self.tokens.insert(0, t);
                     return self.parse_expression_tokens(stack);
-                },
-
-                // If it is not a semicolon
+                }
                 _ => {
-                    // if it is end
-                    match self.check_token(TokenType::Keyword(KeywordType::End), t.clone()) {
-                        ParserState::Continue => {
-                            log!("<YASLC/Parser> Exiting EXPRESSION rule because we found END token.");
-
-                            self.tokens.insert(0, t);
-                            return self.parse_expression_tokens(stack);
-                        },
-                        _ => {
-                            match self.check_token(TokenType::RightParen, t.clone()) {
-                                ParserState::Continue => {
-                                    // if it is not end but instead right paren
-                                    log!("<YASLC/Parser> Exiting EXPRESSION rule because we found RPAREN token.");
-
-                                    self.tokens.insert(0, t);
-                                    return self.parse_expression_tokens(stack);
-                                },
-                                _ => {}
-                            };
-                        },
-                    };
-
                     stack.push(t);
                 }
             };
@@ -975,8 +969,8 @@ impl Parser {
                     Ok((f_symbol, commands)) => {
                         // Add the commands to this list of commands
                         for c in commands {
-                            log!("{}", c);
-                            self.add_command(&*c);
+                            log!("Pushing command from expression parser: {}", c);
+                            self.push_command(c);
                         }
 
                         // Reset the symbol table
@@ -1020,4 +1014,49 @@ pub enum ParserResult {
 
     // The parser reached an unexpected token, should return an error and stop.
     Unexpected,
+}
+
+struct CommandBuilder {
+    commands: Vec<String>,
+
+    prefix: Option<String>,
+}
+
+impl CommandBuilder {
+    fn new() -> CommandBuilder {
+        CommandBuilder {
+            commands: Vec::<String>::new(),
+            prefix: None,
+        }
+    }
+
+    fn push_command(&mut self, command: String) {
+        match self.prefix {
+            Some(ref s) => {
+                log!("Pushing prefix with command: {} {}", s, command);
+                self.commands.push(format!("{} {}", s, command));
+            },
+            None => {
+                log!("Pushing command: {}", command);
+                self.commands.push(command);
+            }
+        };
+        self.prefix = None;
+    }
+
+    fn set_prefix(&mut self, prefix: String) -> String {
+        match self.prefix {
+            Some(ref s) => {
+                s.clone()
+            },
+            None => {
+                self.prefix = Some(prefix.clone());
+                prefix
+            }
+        }
+    }
+
+    fn push_builder(&mut self, builder: CommandBuilder) {
+
+    }
 }
