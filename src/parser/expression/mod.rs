@@ -8,6 +8,7 @@ mod tests;
 
 pub use super::{Token, TokenType, KeywordType};
 pub use super::{Symbol, SymbolTable, SymbolType, SymbolValueType};
+use super::CommandBuilder;
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -265,9 +266,7 @@ impl fmt::Display for Expression {
 /// manages memory allocation for temporary variables used for arithmatic.
 pub struct ExpressionParser {
     /// The list of commands to be pushed onto the program given this expression.
-    commands: Vec<String>,
-
-    prefix: Option<String>,
+    commands: CommandBuilder,
 
     expressions: Vec<Expression>,
 
@@ -294,15 +293,14 @@ impl ExpressionParser {
         };
 
         Some(ExpressionParser {
-            commands: Vec::<String>::new(),
-            prefix: None,
+            commands: CommandBuilder::new(),
             expressions: postfix_exp,
             stack: Vec::<Expression>::new(),
             table: table,
         })
     }
 
-    pub fn parse(mut self) -> Result<(Symbol, Vec<String>), String> {
+    pub fn parse(mut self) -> Result<(Symbol, CommandBuilder), String> {
         let f_symbol = match self.reduce_expression_stack() {
             Some(s) => s,
             None => {
@@ -322,7 +320,7 @@ impl ExpressionParser {
 
     fn push_command(&mut self, command: String) {
         log!("Pushing command: {}", command);
-        self.commands.push(command);
+        self.commands.push_command(command);
     }
 
     /// Reduces the stack of postfix expressions until there is only one remaining.
@@ -586,11 +584,11 @@ impl ExpressionParser {
 
                 // We don't need to type check for comparison because both are stored as integers
                 self.push_command(format!("cmpw {} {}", s1.location(), s2.location()));
-                self.push_command(format!("{} $btrue{}", comp, bool_temp));
+                self.push_command(format!("{} $b_true{}", comp, bool_temp));
                 self.push_command(format!("movw #0 {}", dest.location()));
-                self.push_command(format!("jmp $bend{}", bool_temp));
-                self.push_command(format!("$btrue{} movw #1 {}", bool_temp, dest.location()));
-                self.push_command(format!("$bend{}", bool_temp));
+                self.push_command(format!("jmp $b_end{}", bool_temp));
+                self.push_command(format!("$b_true{} movw #1 {}", bool_temp, dest.location()));
+                self.commands.set_prefix(format!("$b_end{}", bool_temp));
 
                 // Change the value type because all of these comparisons create a boolean
                 dest.set_value_type(SymbolValueType::Bool);
@@ -634,13 +632,13 @@ impl ExpressionParser {
                 let bool_temp = self.table.bool_temp();
 
                 self.push_command(format!("cmpw {} {}", s1.location(), o1));
-                self.push_command(format!("bneq $belse{}", bool_temp));
+                self.push_command(format!("bneq $b_else{}", bool_temp));
                 self.push_command(format!("cmpw {} {}", s2.location(), o1));
-                self.push_command(format!("bneq $belse{}", bool_temp));
+                self.push_command(format!("bneq $b_else{}", bool_temp));
                 self.push_command(format!("movw {} {}", o1, dest.location()));
-                self.push_command(format!("jmp $bend{}", bool_temp));
+                self.push_command(format!("jmp $b_end{}", bool_temp));
                 self.push_command(format!("movw {} {}", o2, dest.location()));
-                self.push_command(format!("$bend{}", bool_temp));
+                self.commands.set_prefix(format!("$b_end{}", bool_temp));
 
                 // Change the value type because all of these comparisons create a boolean
                 dest.set_value_type(SymbolValueType::Bool);

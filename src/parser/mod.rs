@@ -146,6 +146,7 @@ impl Parser {
 
                         // Move the SP based on the number of declarations
                         self.declarations.push(format!("addw #{}, SP", n_decl * 4));
+                        self.declarations.push(format!(""));
 
                         // Create one list of commands
                         self.declarations.append(&mut self.commands.commands);
@@ -153,6 +154,7 @@ impl Parser {
                         // "Fix" commands with prepends and appends
                         self.declarations.insert(0, format!("$main movw SP R0"));
                         self.declarations.insert(0, format!("$junk #1"));
+                        self.declarations.insert(0, format!(": Initialize junk variable and setup the stack"));
 
                         match file_from(self.declarations.clone()) {
                             Ok(f) => {
@@ -643,9 +645,25 @@ impl Parser {
 
         match self.check_token(TokenType::Keyword(KeywordType::While), token.clone()) {
             ParserState::Continue => {
+                // Setup the starting marker
+                let w_temp = self.symbol_table.while_temp();
+                self.push_command(format!("\n: while loop {}", w_temp));
+                self.push_prefix(format!("$b_while{}", w_temp));
+
+                // Evaluate the expression
                 match self.expression() {
                     ParserState::Continue => {
-                        // TODO: Get the value of the expression and do something with it
+                        // Get the value of the boolean expression and compare it to 0, leave the
+                        // loop. Continue otherwise.
+                        let s = match self.last_expression {
+                            Some(ref s) => s.clone(),
+                            None => {
+                                panic!("Attempted to ge the last expression for a while statement but it isn't there!");
+                            }
+                        };
+
+                        self.commands.push_command(format!("cmpw #0 {}", s.location()));
+                        self.commands.push_command(format!("beq $e_while{}", w_temp));
                     },
                     _ => return ParserState::Done(ParserResult::Unexpected),
                 };
@@ -655,7 +673,15 @@ impl Parser {
                     _ => return ParserState::Done(ParserResult::Unexpected),
                 };
 
-                return self.statement();
+                // Code for the statement generates by itself
+                match self.statement() {
+                    ParserState::Continue => {
+                        self.commands.push_command(format!("jmp $b_while{}", w_temp));
+                        self.commands.set_prefix(format!("$e_while{}", w_temp));
+                        return ParserState::Continue;
+                    },
+                    x => return x,
+                };
             },
             _ => {},
         };
@@ -967,11 +993,12 @@ impl Parser {
                 // Parse through the tokens
                 match e.parse() {
                     Ok((f_symbol, commands)) => {
+                        let _ = self.symbol_table.bool_temp();
+
+                        self.commands.push_command(format!(": expression"));
+
                         // Add the commands to this list of commands
-                        for c in commands {
-                            log!("Pushing command from expression parser: {}", c);
-                            self.push_command(c);
-                        }
+                        self.commands.push_builder(commands);
 
                         // Reset the symbol table
                         self.symbol_table.reset_offset();
@@ -1016,7 +1043,7 @@ pub enum ParserResult {
     Unexpected,
 }
 
-struct CommandBuilder {
+pub struct CommandBuilder {
     commands: Vec<String>,
 
     prefix: Option<String>,
@@ -1045,18 +1072,37 @@ impl CommandBuilder {
     }
 
     fn set_prefix(&mut self, prefix: String) -> String {
-        match self.prefix {
-            Some(ref s) => {
-                s.clone()
+        if self.prefix.is_some() {
+            self.push_command(format!("movw R0 R0"));
+        }
+        self.prefix = Some(prefix.clone());
+        prefix
+    }
+
+    fn prepend_last(&mut self, prefix: String) {
+        let old = match self.commands.pop() {
+            Some(s) => {
+                s
             },
             None => {
-                self.prefix = Some(prefix.clone());
-                prefix
+                log!("Warning: Command builder tried to prepend the last command but there was none! Setting prefix...");
+                self.set_prefix(prefix);
+                return;
             }
-        }
+        };
+
+        let new = format!("{}{}", prefix, old);
+        self.commands.push(new);
     }
 
     fn push_builder(&mut self, builder: CommandBuilder) {
+        for c in builder.commands {
+            self.push_command(c);
+        }
 
+        match builder.prefix {
+            Some(s) => {self.set_prefix(s);},
+            None => {}
+        };
     }
 }
