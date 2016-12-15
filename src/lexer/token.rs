@@ -6,7 +6,7 @@
 use std::fmt;
 
 /// TokenType represents all the different types of tokens that can be used in YASL.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum TokenType {
     // Identifier
     Identifier,
@@ -83,7 +83,7 @@ impl fmt::Display for TokenType {
 }
 
 /// KeywordType is an enum subset of TokenType used to store all the types of keywords.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum KeywordType {
     Program,
     Const,

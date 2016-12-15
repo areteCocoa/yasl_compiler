@@ -89,8 +89,8 @@ pub struct Parser {
     /// The set of tokens for this Parser.
     tokens: Vec<Token>,
 
-    /// The last expression stack from the evaluated expression.
-    e_parser: Option<ExpressionParser>,
+    /// The last expression symbol from the evaluated expression
+    last_expression: Option<Symbol>,
 
     /// The last popped token.
     last_token: Option<Token>,
@@ -121,7 +121,7 @@ impl Parser {
 
             last_token: None,
 
-            e_parser: None,
+            last_expression: None,
 
             symbol_table: SymbolTable::empty(),
 
@@ -145,7 +145,7 @@ impl Parser {
                         let n_decl = self.declarations.len();
 
                         // Move the SP based on the number of declarations
-                        self.declarations.push(format!("movw ^{}, SP", n_decl * 4));
+                        self.declarations.push(format!("addw #{}, SP", n_decl * 4));
 
                         // Create one list of commands
                         self.declarations.append(&mut self.commands);
@@ -267,12 +267,7 @@ impl Parser {
                 // TODO: What is the pre-symbol for literal non-alphabet characters?
 
                 // Check if it is a number
-                let com = if c.is_numeric() {
-                    // Add using ^
-                    format!("outb ^{}", c)
-                } else {
-                    format!("outb #{}", c as u8)
-                };
+                let com = format!("outb #{}", c as u8);
 
                 self.add_command(&*com);
             }
@@ -383,7 +378,7 @@ impl Parser {
         match self.symbol_table.get(&*id) {
             Some(s) => {
                 // If it is a constant then set the value
-                self.declarations.push(format!("movw ^{} +{}@R{}", v, s.offset(), s.register()));
+                self.declarations.push(format!("movw #{} +{}@R{}", v, s.offset(), s.register()));
             },
             None => {
                 panic!("Internal error with the symbol table.");
@@ -448,7 +443,7 @@ impl Parser {
         match self.symbol_table.get(&*id) {
             Some(s) => {
                 // Initialize the value as 0
-                self.declarations.push(format!("movw ^0 +{}@R{}", s.offset(), s.register()));
+                self.declarations.push(format!("movw #0 +{}@R{}", s.offset(), s.register()));
             },
             None => {
                 panic!("Internal error with the symbol table.");
@@ -775,14 +770,16 @@ impl Parser {
             ParserState::Continue => {
                 match self.expression() {
                     ParserState::Continue => {
-                        let f = match self.e_parser {
-                            Some(ref s) => {
-                                s.final_symbol()
+                        let f = match self.last_expression {
+                            Some(ref e) => {
+                                e.clone()
                             },
                             None => {
                                 panic!("<YASLC/Parser> Warning: attempted to use expression to set variable but the expression parser is missing!");
                             }
                         };
+
+                        self.last_expression = None;
 
                         // Move the value of the expression to the identifier
                         let id_symbol = self.symbol_table.get(&*id).unwrap().clone();
@@ -803,6 +800,7 @@ impl Parser {
                         // Check that we're assigning to the same type
                         if id_symbol.symbol_type != f.symbol_type {
                             println!("<YASLC/Parser> Attempted to assign a value to a variable who's type is not the same!");
+                            println!("<YASLC/Parser> Variable is type {:?} and value is type {:?}.", id_symbol.symbol_type, f.symbol_type);
                             return ParserState::Done(ParserResult::Unexpected)
                         }
 
@@ -898,7 +896,16 @@ impl Parser {
         log!("<YASLC/Parser> Adding print statement waiting for expression.");
         match self.expression() {
             ParserState::Continue => {
-                // TODO: Get the value of the expression and print
+                let f = if let Some(ref e) = self.last_expression {
+                    e.clone()
+                } else {
+                    println!("<YASLc/Parser> Expected to find an expression parser but it went missing!");
+                    return ParserState::Done(ParserResult::Unexpected);
+                };
+
+                self.add_command(&*format!("outw +{}@R{}", f.offset(), f.register()));
+
+                self.last_expression = None;
 
                 return ParserState::Continue;
             },
@@ -963,21 +970,30 @@ impl Parser {
             Some(e) => {
                 log!("<YASLC/Parser> Expression parser successfully exited!");
 
-                // Add the commands to this list of commands
-                for c in e.commands() {
-                    log!("{}", c);
-                    self.add_command(&*c);
+                // Parse through the tokens
+                match e.parse() {
+                    Ok((f_symbol, commands)) => {
+                        // Add the commands to this list of commands
+                        for c in commands {
+                            log!("{}", c);
+                            self.add_command(&*c);
+                        }
+
+                        // Reset the symbol table
+                        self.symbol_table.reset_offset();
+
+                        // Set the expression parser to our field and continue
+                        self.last_expression = Some(f_symbol);
+                        ParserState::Continue
+                    },
+                    Err(e) => {
+                        log!("<YASLC/Parser> Expression parser was not successful: {}", e);
+                        ParserState::Done(ParserResult::Unexpected)
+                    }
                 }
-
-                // Reset the symbol table
-                self.symbol_table.reset_offset();
-
-                // Set the expression parser to our field and continue
-                self.e_parser = Some(e);
-                ParserState::Continue
             },
             None => {
-                log!("<YASLC/Parser> Expression parser was not successful.");
+                log!("<YASLC/Parser> Expression parser was not in initialization!");
                 ParserState::Done(ParserResult::Unexpected)
             }
         }

@@ -233,7 +233,7 @@ impl SymbolTable {
 
 
 /// A single symbol with an identifier, offset on the stack and register, as well as a type.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Symbol {
     /// The identifier for this symbol.
     identifier: String,
@@ -269,6 +269,14 @@ impl Symbol {
         &self.symbol_type
     }
 
+    pub fn set_value_type(&mut self, v_type: SymbolValueType) {
+        self.symbol_type = match self.symbol_type {
+            SymbolType::Variable(_) => SymbolType::Variable(v_type),
+            SymbolType::Constant(_) => SymbolType::Constant(v_type),
+            _ => panic!("Attempted to set value type for a procedure!"),
+        };
+    }
+
     pub fn offset(&self) -> u32 {
         self.offset.clone()
     }
@@ -283,7 +291,7 @@ impl Symbol {
 }
 
 /// The type of symbol.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum SymbolType {
     /// The symbol is a procedure.
     Procedure,
@@ -297,7 +305,7 @@ pub enum SymbolType {
 
 /// If the symbol type can have a value, it needs to be typed. SymbolValueType
 /// represents different primitive types within YASL.
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum SymbolValueType {
     Int,
     Bool,

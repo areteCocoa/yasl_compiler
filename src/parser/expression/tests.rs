@@ -9,6 +9,8 @@ use super::*;
 /// symbol table and a set of tokens.
 macro_rules! eparser_helper {
     ($( $token:expr ),*) => {{
+
+
         let mut tokens = Vec::<Token>::new();
         $(
             tokens.push($token);
@@ -20,8 +22,11 @@ macro_rules! eparser_helper {
             }
         }
 
-        let parser = ExpressionParser::new(table, tokens);
-        parser.unwrap()
+        let parser = ExpressionParser::new(table, tokens).unwrap();
+        match parser.parse() {
+            Ok((s, c)) => {(s, c)},
+            Err(e) => panic!("Error: {}", e),
+        }
     }};
     (TS $( $s:expr, $t:expr ), *) => {{
         eparser_helper!(
@@ -36,8 +41,11 @@ macro_rules! eparser_helper {
             tokens.push($token);
         )*
 
-        let parser = ExpressionParser::new($table, tokens);
-        parser.unwrap()
+        let parser = ExpressionParser::new($table, tokens).unwrap();
+        match parser.parse() {
+            Ok((s, c)) => {(s, c)},
+            Err(e) => panic!("Error: {}", e),
+        }
     }}
 }
 
@@ -58,19 +66,20 @@ macro_rules! has_command {
 }
 
 macro_rules! is_commands {
-    ($commands:expr, $($expected:expr),*) => (
+    ($parser_results:expr, $($expected:expr),*) => (
+        let commands = $parser_results.1;
         let mut index = 0;
         $(
-            if index >= $commands.len() {
+            if index >= commands.len() {
                 panic!("Not enough commands were generated, only found {}.", index);
             }
-            has_command!($commands, index, $expected);
+            has_command!(commands, index, $expected);
             index += 1;
         )*
-        if index != $commands.len() {
-            println!("The parser generated {} more commands than were expected! Here are the extras:", index - $commands.len());
-            for i in index..$commands.len() {
-                println!("{:?}", $commands[i]);
+        if index != commands.len() {
+            println!("The parser generated {} more commands than were expected! Here are the extras:", index - commands.len());
+            for i in index..commands.len() {
+                println!("{:?}", commands[i]);
             }
             panic!();
         }
@@ -229,7 +238,39 @@ fn e_parser_int_comp_double_arith2() {
         "5", TokenType::Number,
         "<", TokenType::LessThanOrEqual,
         "4", TokenType::Number,
+        "+", TokenType::Plus,
+        "1", TokenType::Number,
         "==", TokenType::EqualTo,
+        "10", TokenType::Number,
+        ">=", TokenType::GreaterThanOrEqual,
+        "9", TokenType::Number,
+        "+", TokenType::Plus,
+        "10", TokenType::Number
+    );
+}
+
+#[test]
+// Tests "5 <= 4 AND 10 >= 9" (it is false)
+fn e_parser_int_comp_and() {
+    eparser_helper!(TS
+        "5", TokenType::Number,
+        "<=", TokenType::LessThanOrEqual,
+        "4", TokenType::Number,
+        "AND", TokenType::Keyword(KeywordType::And),
+        "10", TokenType::Number,
+        ">=", TokenType::GreaterThanOrEqual,
+        "9", TokenType::Number
+    );
+}
+
+#[test]
+// Tests "5 <= 4 OR 10 >= 9" (it is true)
+fn e_parser_int_comp_or() {
+    eparser_helper!(TS
+        "5", TokenType::Number,
+        "<=", TokenType::LessThanOrEqual,
+        "4", TokenType::Number,
+        "OR", TokenType::Keyword(KeywordType::Or),
         "10", TokenType::Number,
         ">=", TokenType::GreaterThanOrEqual,
         "9", TokenType::Number
@@ -246,7 +287,7 @@ fn e_parser_int_comp_double_arith2() {
 // let parser = ... will push x to stack
 fn code_single_expression() {
     let parser = eparser_helper!(Token::new_with(0, 0, "x".to_string(), TokenType::Identifier));
-    let c = parser.commands;
+    let c = parser.1;
 
     // Doesn't need to do any stack work if x is already on the stack
     assert!(c.len() == 0);
@@ -261,7 +302,7 @@ fn code_add_two() {
 
     // Load value of x to temporary $0 => movw +0@R0 +0@R1
     // Add value of y to temporary $0 => addw +4@R0 +0@R1
-    is_commands!(parser.commands, "movw +0@R0 +0@R1",
+    is_commands!(parser, "movw +0@R0 +0@R1",
         "addw +4@R0 +0@R1");
 }
 
@@ -274,7 +315,7 @@ fn code_product_two() {
 
     // Load value of x to temporary $0 => movw +0@R0 +0@R1
     // Add value of y to temporary $0 => mulw +4@R1 +0@R1
-    is_commands!(parser.commands,
+    is_commands!(parser,
         "movw +0@R0 +0@R1",
         "mulw +4@R0 +0@R1");
 }
@@ -292,7 +333,7 @@ fn code_mod_two() {
     // Move x to second temp variable
     // Subtract first temp from second temp
     // Move second temp to R1
-    is_commands!(parser.commands,
+    is_commands!(parser,
         "movw +0@R0 +0@R1",
         "divw +4@R0 +0@R1",
         "mulw +4@R0 +0@R1",
@@ -316,7 +357,7 @@ fn code_add_product_three() {
     // Move y to temp 1
     // Mult temp 1 by z
     // Add x to temp 1
-    is_commands!(parser.commands,
+    is_commands!(parser,
         // Move y to temp1
         "movw +4@R0 +0@R1",
 
@@ -365,7 +406,7 @@ fn code_long_expression() {
     // div temp 2 by z
     // sub temp 1 by temp 2
     // add 1 to temp 1
-    is_commands!(parser.commands,
+    is_commands!(parser,
         // move x to temp1
         "movw +0@R0 +0@R1",
 
@@ -373,13 +414,13 @@ fn code_long_expression() {
         "mulw +4@R0 +0@R1",
 
         // move 30 to t2
-        "movw ^30 +4@R1",
+        "movw #30 +4@R1",
 
         // div temp2 by z
         "divw +8@R0 +4@R1",
 
         // move 1 to t3
-        "movw ^1 +8@R1",
+        "movw #1 +8@R1",
 
         // add t3 to t2
         "addw +8@R1 +4@R1",
@@ -388,7 +429,7 @@ fn code_long_expression() {
         "subw +4@R1 +0@R1",
 
         // move 4 to t4
-        "movw ^4 +12@R1",
+        "movw #4 +12@R1",
 
         // add t1 to t4 (because of the order of operations)
         "addw +0@R1 +12@R1",

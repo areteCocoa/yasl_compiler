@@ -34,19 +34,22 @@ macro_rules! log {
 }
 
 // Helper function
-fn type_for_string(l: &String) -> Option<SymbolValueType> {
+pub fn type_for_string(l: &String) -> Option<SymbolValueType> {
     // If the lexeme is numeric it's a number, otherwise if its "true"/"false its a boolean"
     // if its neither then crash
     match l.parse::<i32>() {
         Ok(_) => {
             // Its a number
+            log!("Determined that the type for string {} is int.", l);
             Some(SymbolValueType::Int)
         },
         Err(_) => {
             // It is not a number, check if it is a boolean
             if l == "true" {
+                log!("Determined that the type for string {} is bool.", l);
                 Some(SymbolValueType::Bool)
             } else if l == "false" {
+                log!("Determined that the type for string {} is bool.", l);
                 Some(SymbolValueType::Bool)
             } else {
                 // We don't know what it is, crash.
@@ -57,7 +60,7 @@ fn type_for_string(l: &String) -> Option<SymbolValueType> {
     }
 }
 
-#[derive(PartialEq, Clone)]
+#[derive(Eq, PartialEq, Clone)]
 enum OType {
     // String is the value of the variable
     Static(String),
@@ -67,7 +70,7 @@ enum OType {
 }
 
 /// Expression represents a single piece of expressions.
-#[derive(PartialEq, Clone)]
+#[derive(Eq, PartialEq, Clone)]
 enum Expression {
     /// Operator are all expressions that modify Operands or Combined expressions.
     ///
@@ -110,8 +113,8 @@ impl Expression {
             TokenType::Identifier => Some(Expression::Operand(OType::Variable(t.lexeme()))),
 
             // true and false
-            TokenType::Keyword(KeywordType::True) => Some(Expression::Operand(OType::Static(format!("1")))),
-            TokenType::Keyword(KeywordType::False) => Some(Expression::Operand(OType::Static(format!("0")))),
+            TokenType::Keyword(KeywordType::True) => Some(Expression::Operand(OType::Static(format!("true")))),
+            TokenType::Keyword(KeywordType::False) => Some(Expression::Operand(OType::Static(format!("false")))),
 
             _ => None,
         }
@@ -140,7 +143,10 @@ impl PartialOrd for Expression {
 
                     &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Greater),
 
-                    &Operand(_) => Some(Ordering::Less),
+                    &Operator(TokenType::Keyword(KeywordType::And)) | &Operator(TokenType::Keyword(KeywordType::Or))
+                        => Some(Ordering::Greater),
+
+                    &Operand(_) => Some(Ordering::Greater),
 
                     _ => None,
                 }
@@ -162,6 +168,9 @@ impl PartialOrd for Expression {
 
                     &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Greater),
 
+                    &Operator(TokenType::Keyword(KeywordType::And)) | &Operator(TokenType::Keyword(KeywordType::Or))
+                        => Some(Ordering::Greater),
+
                     _ => None,
                 }
             },
@@ -182,6 +191,9 @@ impl PartialOrd for Expression {
 
                     &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Greater),
 
+                    &Operator(TokenType::Keyword(KeywordType::And)) | &Operator(TokenType::Keyword(KeywordType::Or))
+                        => Some(Ordering::Greater),
+
                     _ => None,
                 }
             },
@@ -200,16 +212,24 @@ impl PartialOrd for Expression {
 
                     &Operator(TokenType::EqualTo) | &Operator(TokenType::NotEqualTo) => Some(Ordering::Less),
 
-                    _ => None,
+                    &Operator(TokenType::Keyword(KeywordType::And)) | &Operator(TokenType::Keyword(KeywordType::Or))
+                        => Some(Ordering::Greater),
+
+                    _ => {
+                        None
+                    },
                 }
             }
+
+            &Operator(TokenType::Keyword(KeywordType::And)) | &Operator(TokenType::Keyword(KeywordType::Or)) => Some(Ordering::Less),
 
             &Operand(_) => {
                 // Any number
                 match other {
-                    &Operator(TokenType::Plus) | &Operator(TokenType::Minus) |
-                    &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))|
-                    &Operator(TokenType::Keyword(KeywordType::Mod)) => Some(Ordering::Greater),
+                    // &Operator(TokenType::Plus) | &Operator(TokenType::Minus) |
+                    // &Operator(TokenType::Star) | &Operator(TokenType::Keyword(KeywordType::Div))|
+                    // &Operator(TokenType::Keyword(KeywordType::Mod)) => Some(Ordering::Greater),
+                    &Operator(_) => Some(Ordering::Greater),
 
                     &Operand(_) => None,
 
@@ -247,7 +267,12 @@ pub struct ExpressionParser {
     /// The list of commands to be pushed onto the program given this expression.
     commands: Vec<String>,
 
-    final_symbol: Symbol,
+    expressions: Vec<Expression>,
+
+    // The stack used when reducing the expression to one symbol
+    stack: Vec<Expression>,
+
+    table: SymbolTable,
 }
 
 impl ExpressionParser {
@@ -266,60 +291,59 @@ impl ExpressionParser {
             None => return None,
         };
 
-        let (f_symbol_opt, mut commands) = ExpressionParser::reduce_expression_stack(postfix_exp, table);
-
-        let f_symbol = match f_symbol_opt {
-            Some(s) => s,
-            None => {
-                println!("<YASLC/ExpressionParser> Attempted to get final symbol for expression but none was found!");
-                return None;
-            }
-        };
-
-        // Now that we have one single expression, move it to the SP
-        if f_symbol.offset() != 0 {
-            let sp_mov = format!("movw +{}@R{} +0@R{}", f_symbol.offset(), f_symbol.register(), f_symbol.register());
-            commands.push(sp_mov);
-        }
-
         Some(ExpressionParser {
-            commands: commands,
-            final_symbol: f_symbol
+            commands: Vec::<String>::new(),
+            expressions: postfix_exp,
+            stack: Vec::<Expression>::new(),
+            table: table,
         })
     }
 
-    /// Returns a list of commands from this expression parser.
-    pub fn commands(&self) -> Vec<String> {
-        self.commands.clone()
+    pub fn parse(mut self) -> Result<(Symbol, Vec<String>), String> {
+        let f_symbol = match self.reduce_expression_stack() {
+            Some(s) => s,
+            None => {
+                return Err(format!("<YASLC/ExpressionParser> Attempted to get final symbol for expression but none was found!"));
+            }
+        };
+
+        // // Now that we have one single expression, move it to the SP
+        if f_symbol.offset() != 0 {
+            let sp_mov = format!("movw +{}@R{} +0@R{}", f_symbol.offset(), f_symbol.register(), f_symbol.register());
+            self.push_command(sp_mov);
+        }
+
+
+        Ok((f_symbol, self.commands))
     }
 
-    pub fn final_symbol(&self) -> Symbol {
-        self.final_symbol.clone()
+    fn push_command(&mut self, command: String) {
+        log!("Pushing command: {}", command);
+        self.commands.push(command);
     }
 
     /// Reduces the stack of postfix expressions until there is only one remaining.
-    fn reduce_expression_stack(mut expressions: Vec<Expression>, mut table: SymbolTable) -> (Option<Symbol>, Vec<String>) {
+    fn reduce_expression_stack(&mut self) -> Option<Symbol> {
         // Move the register up by 1
-        table.up_register();
-
-        // Declare the stack and the list of commands
-        let mut stack = Vec::<Expression>::new();
-        let mut commands = Vec::<String>::new();
+        self.table.up_register();
 
         // Reduce the list until there are no commands remaining
-        while expressions.len() > 0 {
-            // Pop the first expression
-            let e = expressions.remove(0);
+        while self.expressions.len() > 0 {
+            log!(NNL "Reducing in state:\n\tExpressions:[ ");
+            for e in self.expressions.iter() {
+                log!(NNL "{}, ", e);
+            }
+            log!(NNL "],\n\tStack: [");
+            for e in self.stack.iter() {
+                log!(NNL "{}, ", e);
+            }
+            log!("]");
 
-            match ExpressionParser::handle_expression(e, &mut table, &mut stack) {
-                Ok(opt_com) => match opt_com {
-                        Some(coms) => {
-                            for com in coms {
-                                commands.push(com);
-                            }
-                        },
-                        None => {},
-                    },
+            // Pop the first expression
+            let e = self.expressions.remove(0);
+
+            match self.handle_expression(e) {
+                Ok(_) => {},
                 Err(error) => {
                     panic!("<YASLC/ExpressionParser> Error handling expression: {}", error);
                 }
@@ -327,50 +351,45 @@ impl ExpressionParser {
 
         }
 
-        let f_symbol = match ExpressionParser::f_symbol(stack, table) {
-            (Some(s), coms) => {
-                for com in coms {
-                    commands.push(com);
-                }
+        let f_symbol = match self.f_symbol() {
+            Some(s) => {
                 s
             },
             _ => {
                 println!("<YASLC/ExpressionParser> Error: Expected to find final symbol in expression parser but none was found!");
-                return (None, commands);
+                return None;
             }
         };
 
-        (Some(f_symbol), commands)
+        Some(f_symbol)
     }
 
-    fn f_symbol(mut stack: Vec<Expression>, mut table: SymbolTable) -> (Option<Symbol>, Vec<String>) {
-        if stack.len() == 0 {
+    /// Returns the final symbol, given the stack is reduced
+    fn f_symbol(&mut self) -> Option<Symbol> {
+        if self.stack.len() == 0 {
             panic!("<YASLC/ExpressionParser> Internal error attempted to get the final symbol of an expression but it was not found!");
         }
 
-        match stack.remove(0) {
+        match self.stack.remove(0) {
             // A combined expression
-            Expression::Combined(s) => (Some(s), Vec::<String>::new()),
+            Expression::Combined(s) => Some(s),
 
             // A single operand
             Expression::Operand(o_type) => {
                 match o_type {
                     OType::Static(l) => {
-                        let s = table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
-                        // TODO: Is the correct format for constants "^"?
-                        let c = format!("movw {} +{}@R{}", l, s.offset(), s.register());
-                        let mut commands = Vec::<String>::new();
-                        commands.push(c);
-                        (Some(s.clone()), commands)
+                        let s = self.table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
+                        self.push_command(format!("movw #{} +{}@R{}", l, s.offset(), s.register()));
+                        Some(s.clone())
                     },
                     OType::Variable(t) => {
-                        let symbol = match table.get(&*t) {
+                        let symbol = match self.table.get(&*t) {
                             Some(s) => s,
                             None => {
                                 panic!("<YASLC/ExpressionParser> Attempted to use a symbol that was not found in the symbol table! This is very unexpected...");
                             }
                         };
-                        (Some(symbol.clone()), Vec::<String>::new())
+                        Some(symbol.clone())
                     }
                 }
             }
@@ -380,7 +399,7 @@ impl ExpressionParser {
         }
     }
 
-    fn last_two_expressions(stack: &mut Vec<Expression>) -> Result<(Expression, Expression), String> {
+    fn last_two_expressions(mut stack: &mut Vec<Expression>) -> Result<(Expression, Expression), String> {
         let e2 = match stack.pop() {
             Some(s) => s,
             None => {
@@ -396,15 +415,10 @@ impl ExpressionParser {
         Ok((e1, e2))
     }
 
-    // fn perform_operation(t_type: TokenType, s1: &Symbol, v: String) -> Result<Vec<String>, String> {
-    //     Err("".to_string())
-    // }
-
-    fn reduce_expression(t_type: TokenType, mut stack: &mut Vec<Expression>, mut table: &mut SymbolTable) -> Result<Vec<String>, String> {
-        let mut commands = Vec::<String>::new();
-
+    /// Reduces the previous two expressions on self.stack with the token type t_type
+    fn reduce_expression(&mut self, t_type: TokenType) -> Result<(), String> {
         // Pop the previous two expressions
-        let (e1, e2) = match ExpressionParser::last_two_expressions(&mut stack) {
+        let (e1, e2) = match ExpressionParser::last_two_expressions(&mut self.stack) {
             Ok((r1, r2)) => (r1, r2),
             Err(e) => panic!("<YASLC/ExpresionParser> {}", e),
         };
@@ -418,7 +432,7 @@ impl ExpressionParser {
                 match o_type {
                     // If its a variable
                     OType::Variable(l) => {
-                        match table.get(&*l) {
+                        match self.table.get(&*l) {
                             Some(x) => x.clone(),
                             None => panic!("Attempted to use variable '{}' that has not been declared!", l),
                         }
@@ -426,8 +440,8 @@ impl ExpressionParser {
 
                     // It is a constant, initialize to a temp
                     OType::Static(l) => {
-                        let temp = table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
-                        commands.push(format!("movw ^{} +{}@R{}", l, temp.offset(), temp.register()));
+                        let temp = self.table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
+                        self.push_command(format!("movw #{} +{}@R{}", l, temp.offset(), temp.register()));
                         temp
                     }
                 }
@@ -441,7 +455,7 @@ impl ExpressionParser {
                 match o_type {
                     // If its a variable
                     OType::Variable(l) => {
-                        match table.get(&*l) {
+                        match self.table.get(&*l) {
                             Some(x) => x.clone(),
                             None => panic!("Attempted to use variable '{}' that has not been declared!", l),
                         }
@@ -449,8 +463,8 @@ impl ExpressionParser {
 
                     // It is a constant, initialize to a temp
                     OType::Static(l) => {
-                        let temp = table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
-                        commands.push(format!("movw ^{} +{}@R{}", l, temp.offset(), temp.register()));
+                        let temp = self.table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
+                        self.push_command(format!("movw #{} +{}@R{}", l, temp.offset(), temp.register()));
                         temp
                     }
                 }
@@ -464,7 +478,7 @@ impl ExpressionParser {
         }
 
         // Find the destination symbol
-        let dest = if s1.is_temp() {
+        let mut dest = if s1.is_temp() {
             // We can operate on s1
             println!("We can operate on {:?} for expression in place of a temp because it is already a temp!", s1);
             s1.clone()
@@ -472,17 +486,12 @@ impl ExpressionParser {
             // We have to operate on a temp
             //
             // Move the value from the first symbol to temp
-            let temp = table.temp(s1.symbol_type.clone());
+            let temp = self.table.temp(s1.symbol_type.clone());
             let mov = format!("movw +{}@R{} +{}@R{}", s1.offset(), s1.register(),
                 temp.offset(), temp.register());
-            commands.push(mov);
+            self.push_command(mov);
             temp
         };
-
-        // Create the combination expression
-        let c = Expression::Combined(dest.clone());
-        // Push the combination expression to the stack
-        stack.push(c);
 
         // Determine the operator given the token type
         let op = match t_type {
@@ -495,35 +504,35 @@ impl ExpressionParser {
 
                 // Generate temp 1 and 2
                 let temp1 = dest;
-                let temp2 = table.temp(s2.symbol_type.clone());
+                let temp2 = self.table.temp(s2.symbol_type.clone());
 
                 // Divide temp1 by s2
-                commands.push(format!("divw +{}@R{} +{}@R{}",
+                self.push_command(format!("divw +{}@R{} +{}@R{}",
                     s2.offset(), s2.register(), temp1.offset(), temp1.register()));
 
                 // Multiply temp1 by s2
-                commands.push(format!("mulw +{}@R{} +{}@R{}",
+                self.push_command(format!("mulw +{}@R{} +{}@R{}",
                     s2.offset(), s2.register(), temp1.offset(), temp1.register()));
 
                 // Move s1 to temp2
-                commands.push(format!("movw +{}@R{} +{}@R{}",
+                self.push_command(format!("movw +{}@R{} +{}@R{}",
                     s1.offset(), s1.register(), temp2.offset(), temp2.register()));
 
                 // Subtract temp1 from temp2
-                commands.push(format!("subw +{}@R{} +{}@R{}",
+                self.push_command(format!("subw +{}@R{} +{}@R{}",
                     temp1.offset(), temp1.register(), temp2.offset(), temp2.register()));
 
                 // Move temp2 to s1 (dest)
-                commands.push(format!("movw +{}@R{} +{}@R{}",
+                self.push_command(format!("movw +{}@R{} +{}@R{}",
                     temp2.offset(), temp2.register(), temp1.offset(), temp1.register()));
 
                 log!("<YASLC/ExpressionParser> Successfully generated 'mod' expression code.");
 
                 // Generate the combined expression
                 let c = Expression::Combined(temp1);
-                stack.push(c);
+                self.stack.push(c);
 
-                return Ok(commands);
+                return Ok(());
             },
 
             TokenType::GreaterThan | TokenType::LessThan | TokenType::GreaterThanOrEqual
@@ -538,7 +547,7 @@ impl ExpressionParser {
                     };
                     // If its a boolean, return an error
                     match vt {
-                        &SymbolValueType::Bool => return Err(format!("Expected symbol {:?} to be an integer but it was a boolean!", s1)),
+                        &SymbolValueType::Int => return Err(format!("Expected symbol {:?} to be an integer but it was a boolean!", s1)),
                         _ => {},
                     };
                 }
@@ -554,21 +563,73 @@ impl ExpressionParser {
                     _ => panic!(),
                 };
 
-                let bool_temp = table.bool_temp();
+                let bool_temp = self.table.bool_temp();
 
                 // We don't need to type check for comparison because both are stored as integers
-                commands.push(format!("cmpw {} {}", s1.location(), s2.location()));
-                commands.push(format!("{} $btrue{}", comp, bool_temp));
-                commands.push(format!("movw 0 {}", dest.location()));
-                commands.push(format!("jmp $bend{}", bool_temp));
-                commands.push(format!("$btrue{} movw 1 {}", bool_temp, dest.location()));
-                commands.push(format!("$bend{}", bool_temp));
+                self.push_command(format!("cmpw {} {}", s1.location(), s2.location()));
+                self.push_command(format!("{} $btrue{}", comp, bool_temp));
+                self.push_command(format!("movw #0 {}", dest.location()));
+                self.push_command(format!("jmp $bend{}", bool_temp));
+                self.push_command(format!("$btrue{} movw #1 {}", bool_temp, dest.location()));
+                self.push_command(format!("$bend{}", bool_temp));
 
-                return Ok(commands);
+                // Change the value type because all of these comparisons create a boolean
+                dest.set_value_type(SymbolValueType::Bool);
+                // Create the combination expression
+                // Push the combination expression to the stack
+                let c = Expression::Combined(dest);
+                self.stack.push(c);
+
+                return Ok(());
             },
 
             TokenType::Keyword(KeywordType::And) | TokenType::Keyword(KeywordType::Or) => {
-                return Err(format!("unimplemented for joining boolean expressions!"));
+                let vt = match s1.symbol_type() {
+                    &SymbolType::Variable(ref vt) | &SymbolType::Constant(ref vt) => {
+                        vt
+                    },
+                    _ => return Err(format!("<YASLC/ExpressionParser> Found an error that should have been caught a long time ago...")),
+                };
+                // If its an integer, return an error
+                match vt {
+                    &SymbolValueType::Int => return Err(format!("Expected symbol {:?} to be an boolean but it was a integer!", s1)),
+                    _ => {},
+                };
+
+
+                // For OR expressions we exit if either is TRUE and set to TRUE so we can exit
+                // early.
+                // For AND expressions we exit if either is NOT TRUE and set to NOT TRUE so
+                // we can exit early.
+                //
+                // o1 => symbol is compared to and set to if both are equal to it
+                // o2 => the alternate if either is not equal to
+
+                let (o1, o2) = match t_type {
+                    TokenType::Keyword(KeywordType::And) => ("1", "0"),
+                    TokenType::Keyword(KeywordType::Or) => ("0", "1"),
+                    _ => panic!(),
+                };
+
+                let bool_temp = self.table.bool_temp();
+
+                self.push_command(format!("cmpw {} {}", s1.location(), o1));
+                self.push_command(format!("bneq $belse{}", bool_temp));
+                self.push_command(format!("cmpw {} {}", s2.location(), o1));
+                self.push_command(format!("bneq $belse{}", bool_temp));
+                self.push_command(format!("movw {} {}", o1, dest.location()));
+                self.push_command(format!("jmp $bend{}", bool_temp));
+                self.push_command(format!("movw {} {}", o2, dest.location()));
+                self.push_command(format!("$bend{}", bool_temp));
+
+                // Change the value type because all of these comparisons create a boolean
+                dest.set_value_type(SymbolValueType::Bool);
+                // Create the combination expression
+                // Push the combination expression to the stack
+                let c = Expression::Combined(dest);
+                self.stack.push(c);
+
+                return Ok(());
             }
 
             n => {
@@ -576,23 +637,24 @@ impl ExpressionParser {
             },
         };
 
+        // Push the combination expression to the stack
+        let c = Expression::Combined(dest.clone());
+        self.stack.push(c);
+
         // Perform the operation
         let full_op = format!("{} +{}@R{} +{}@R{}", op, s2.offset(), s2.register(),
             dest.offset(), dest.register());
 
-        for c in commands.iter() {
-            log!("YASLC/ExpressionParser> Generated code for reduction: '{}'", c);
-        }
         log!("<YASLC/ExpressionParser> Generated operation for reduction: '{}'", full_op);
 
-        commands.push(full_op);
+        self.push_command(full_op);
 
-        Ok(commands)
+        Ok(())
     }
 
     /// Determines what the expression is and whether it should be inserted to the symbol table
     /// and/or stack as well as whether reduction should happen.
-    fn handle_expression(e: Expression, mut table: &mut SymbolTable, mut stack: &mut Vec<Expression>) -> Result<Option<Vec<String>>, String> {
+    fn handle_expression(&mut self, e: Expression) -> Result<(), String> {
         // Figure out what the expression
         match e.clone() {
             // The expression is an operand but may be an identifier (variable)
@@ -602,7 +664,7 @@ impl ExpressionParser {
                 match o_type {
                     OType::Variable(l) => {
                         // Check that the variable has been declared
-                        if let Some(s) = table.get(&*l) {
+                        if let Some(s) = self.table.get(&*l) {
                             match s.symbol_type {
                                 SymbolType::Procedure => {
                                     // Fail, we can't use procedures in expressions
@@ -611,16 +673,16 @@ impl ExpressionParser {
                                 _ => {}
                             }
                             // Success, push the operand to the stack
-                            stack.push(e);
-                            return Ok(None);
+                            self.stack.push(e);
+                            return Ok(());
                         } else {
                             panic!("Attempted to use variable '{}' that has not been declared!", l);
                         }
                     },
-                    OType::Static(l) => {
+                    OType::Static(_) => {
                         // It is a constant number, just push to the stack
-                        stack.push(e);
-                        return Ok(None);
+                        self.stack.push(e);
+                        return Ok(());
                     }
                 }
             },
@@ -632,16 +694,16 @@ impl ExpressionParser {
             // expressions is already in postfix order.
             Expression::Operator(t_type) => {
                 // Pop the previous two expressions and combine them
-                let reduce_result = ExpressionParser::reduce_expression(t_type, &mut stack, &mut table);
+                let reduce_result = self.reduce_expression(t_type);
 
                 match reduce_result {
-                    Ok(com) => return Ok(Some(com)),
+                    Ok(_) => Ok(()),
                     Err(e) => panic!("Error while reducing expression stack: {}", e),
                 }
             },
             Expression::Combined(_) => {
-                stack.push(e);
-                Ok(None)
+                self.stack.push(e);
+                Ok(())
             }
         }
     }
@@ -687,7 +749,6 @@ impl ExpressionParser {
                     stack.push(e);
                 },
                 Expression::Operator(_) => {
-                    log!("<YASLC/ExpressionParser> Found operator {}.", e);
                     // We have an operator, check it's precedence vs the top of the stack
                     if op_stack.len() != 0 {
                         while let Some(o) = op_stack.pop() {
@@ -710,8 +771,7 @@ impl ExpressionParser {
                 }
             }
         }
-
-        // Check if we have any operators left in the op_stack and just push the to the stack in order
+        
         while let Some(o) = op_stack.pop() {
             stack.push(o);
         }
