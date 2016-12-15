@@ -541,10 +541,11 @@ impl ExpressionParser {
                 self.push_command(format!("movw +{}@R{} +{}@R{}",
                     temp2.offset(), temp2.register(), temp1.offset(), temp1.register()));
 
-                log!("<YASLC/ExpressionParser> Successfully generated 'mod' expression code.");
+
 
                 // Generate the combined expression
                 let c = Expression::Combined(temp1);
+                log!("<YASLC/ExpressionParser> Successfully generated 'mod' expression code, {}", c);
                 self.stack.push(c);
 
                 return Ok(());
@@ -564,7 +565,7 @@ impl ExpressionParser {
                     };
                     // If its a boolean, return an error
                     match vt {
-                        &SymbolValueType::Int => return Err(format!("Expected symbol {:?} to be an integer but it was a boolean!", s1)),
+                        &SymbolValueType::Bool => return Err(format!("Expected symbol {:?} to be an integer but it was a boolean!", s1)),
                         _ => {},
                     };
                 }

@@ -621,9 +621,20 @@ impl Parser {
 
         match self.check_token(TokenType::Keyword(KeywordType::If), token.clone()) {
             ParserState::Continue => {
+                let i_temp = self.symbol_table.if_temp();
                 match self.expression() {
                     ParserState::Continue => {
-                        // TODO: Get the value of the expression and do something with it
+                        // Get the value of the boolean expression and compare it to 0. If it is
+                        // eq to 0 then go to else
+                        let s = match self.last_expression {
+                            Some(ref s) => s.clone(),
+                            None => {
+                                panic!("Attempted to ge the last expression for an if statement but it isn't there!");
+                            }
+                        };
+
+                        self.commands.push_command(format!("cmpw #0 {}", s.location()));
+                        self.commands.push_command(format!("beq $if_else{}", i_temp));
                     },
                     _ => return ParserState::Done(ParserResult::Unexpected),
                 };
@@ -638,7 +649,18 @@ impl Parser {
                     _ => return ParserState::Done(ParserResult::Unexpected),
                 };
 
-                return self.follow_if();
+                // Statements have ended, jump to end,
+                // and prepend next command with $if_else{}
+                self.commands.push_command(format!("jmp $end_if{}", i_temp));
+                self.commands.set_prefix(format!("$if_else{}", i_temp));
+
+                match self.follow_if() {
+                    ParserState::Continue => {
+                        self.commands.set_prefix(format!("$end_if{}", i_temp));
+                        return ParserState::Continue;
+                    },
+                    x => return x,
+                };
             },
             _ => {},
         };
@@ -967,7 +989,7 @@ impl Parser {
             match t.token_type() {
                 TokenType::Semicolon | TokenType::Keyword(KeywordType::Do)
                 | TokenType::Keyword(KeywordType::Then) | TokenType::Keyword(KeywordType::End)
-                | TokenType::RightParen => {
+                | TokenType::RightParen | TokenType::Keyword(KeywordType::Else) => {
                     // We can exit because it is the end of the expression
                     log!("<YASLC/Parser> Exiting EXPRESSION rule because we found a {} token.", t);
 
