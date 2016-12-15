@@ -6,6 +6,6 @@ program demo;
 var y : bool;
 var x : int;
 begin
-  y = true;
-  x = 5
+  y = 5 < 4;
+  x = 5;
 end.

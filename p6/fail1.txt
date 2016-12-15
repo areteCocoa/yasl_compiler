@@ -1,0 +1,12 @@
+program demo;
+
+// I. Variable type checking
+// - Types (bool and int) are enforced
+
+var y : int;
+var x : bool;
+begin
+  // fails because these two are the wrong types
+  y = true;
+  x = 5
+end.

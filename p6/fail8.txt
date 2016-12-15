@@ -1,0 +1,11 @@
+program demo;
+
+// I. Variable type checking
+// - Types (bool and int) are enforced
+
+var y : bool;
+var x : int;
+begin
+  y = 5 < 4;
+  x = 5;
+end.

@@ -1,0 +1,10 @@
+program demo;
+
+// II. Boolean evaluation
+
+var y : bool;
+var x : bool;
+begin
+  x = true;
+  y = 5 < x
+end.
