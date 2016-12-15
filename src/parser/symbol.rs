@@ -39,6 +39,8 @@ pub struct SymbolTable {
 
     next_temp: u32,
 
+    next_bool_temp: u32,
+
     next_if_temp: u32,
 
     next_while_temp: u32,
@@ -56,6 +58,7 @@ impl SymbolTable {
             register: 0,
             next_offset: 0,
             next_temp: 0,
+            next_bool_temp: 0,
             next_if_temp: 0,
             next_while_temp: 0,
             next_proc_temp: 0,
@@ -69,6 +72,7 @@ impl SymbolTable {
         let register = self.register;
         let n_o = self.next_offset;
         let n_t = self.next_temp;
+        let n_bt = self.next_bool_temp;
         let n_it = self.next_if_temp;
         let n_wt = self.next_while_temp;
         let n_pt = self.next_proc_temp;
@@ -82,6 +86,7 @@ impl SymbolTable {
             register: register,
             next_offset: n_o,
             next_temp: n_t,
+            next_bool_temp: n_bt,
             next_if_temp: n_it,
             next_while_temp: n_wt,
             next_proc_temp: n_pt,
@@ -173,6 +178,11 @@ impl SymbolTable {
         self.register += 1;
         self.next_offset = 0;
         self.next_temp = 0;
+    }
+
+    pub fn bool_temp(&mut self) -> u32 {
+        self.next_bool_temp += 1;
+        self.next_bool_temp - 1
     }
 
     pub fn if_temp(&mut self) -> u32 {

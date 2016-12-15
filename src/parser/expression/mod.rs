@@ -23,6 +23,14 @@ macro_rules! log {
             }
         }
     };
+
+    (NNL $message:expr $(,$arg:expr)*) => {
+        unsafe {
+            if VERBOSE == true {
+                print!($message, $($arg,)*);
+            }
+        }
+    };
 }
 
 // Helper function
@@ -30,7 +38,7 @@ fn type_for_string(l: &String) -> Option<SymbolValueType> {
     // If the lexeme is numeric it's a number, otherwise if its "true"/"false its a boolean"
     // if its neither then crash
     match l.parse::<i32>() {
-        Ok(n) => {
+        Ok(_) => {
             // Its a number
             Some(SymbolValueType::Int)
         },
@@ -93,6 +101,10 @@ impl Expression {
             | TokenType::Keyword(KeywordType::Mod) | TokenType::GreaterThan | TokenType::LessThan
             | TokenType::GreaterThanOrEqual | TokenType::LessThanOrEqual | TokenType::EqualTo
             | TokenType::NotEqualTo => Some(Expression::Operator(t.token_type())),
+
+            // Boolean exclusive operators
+            TokenType::Keyword(KeywordType::And) | TokenType::Keyword(KeywordType::Or)
+                => Some(Expression::Operator(t.token_type())),
 
             // Variables and Constants
             TokenType::Identifier => Some(Expression::Operand(OType::Variable(t.lexeme()))),
@@ -372,13 +384,13 @@ impl ExpressionParser {
         let e2 = match stack.pop() {
             Some(s) => s,
             None => {
-                return Err(format!("<YASLC/ExpressionParser> Error: attempted to reduce expression but there is a missing operand!"));
+                return Err(format!("Attempted to reduce expression but there is two missing operands!"));
             }
         };
         let e1 = match stack.pop() {
             Some(s) => s,
             None => {
-                return Err(format!("<YASLC/ExpressionParser> Error: attempted to reduce expression but there are two missing operands!"));
+                return Err(format!("Attempted to reduce expression but there is a missing operand!"));
             }
         };
         Ok((e1, e2))
@@ -396,6 +408,8 @@ impl ExpressionParser {
             Ok((r1, r2)) => (r1, r2),
             Err(e) => panic!("<YASLC/ExpresionParser> {}", e),
         };
+
+        log!("<YASLC/ExpressionParser> Reducing expressions {} and {} using {}.", e1, e2, t_type);
 
         // Match the first expression because if it is a temp variable we can operate on that
         // and not have to create another temp variable
@@ -465,6 +479,11 @@ impl ExpressionParser {
             temp
         };
 
+        // Create the combination expression
+        let c = Expression::Combined(dest.clone());
+        // Push the combination expression to the stack
+        stack.push(c);
+
         // Determine the operator given the token type
         let op = match t_type {
             TokenType::Plus => "addw",
@@ -508,29 +527,42 @@ impl ExpressionParser {
             },
 
             TokenType::GreaterThan | TokenType::LessThan | TokenType::GreaterThanOrEqual
-            | TokenType::LessThanOrEqual => {
-                let vt = match s1.symbol_type() {
-                    &SymbolType::Variable(ref vt) | &SymbolType::Constant(ref vt) => {
-                        vt
-                    },
-                    _ => return Err(format!("<YASLC/ExpressionParser> Found an error that should have been caught a long time ago...")),
+            | TokenType::LessThanOrEqual | TokenType::EqualTo | TokenType::NotEqualTo  => {
+                // if we have == or <> check that it is NOT boolean type
+                if t_type == TokenType::EqualTo || t_type == TokenType::NotEqualTo {
+                    let vt = match s1.symbol_type() {
+                        &SymbolType::Variable(ref vt) | &SymbolType::Constant(ref vt) => {
+                            vt
+                        },
+                        _ => return Err(format!("<YASLC/ExpressionParser> Found an error that should have been caught a long time ago...")),
+                    };
+                    // If its a boolean, return an error
+                    match vt {
+                        &SymbolValueType::Bool => return Err(format!("Expected symbol {:?} to be an integer but it was a boolean!", s1)),
+                        _ => {},
+                    };
+                }
+
+                // Get the comparator command
+                let comp  = match t_type {
+                    TokenType::GreaterThan => "bgtr",
+                    TokenType::GreaterThanOrEqual => "bgeq",
+                    TokenType::EqualTo => "beq",
+                    TokenType::NotEqualTo => "bneq",
+                    TokenType::LessThanOrEqual => "bleq",
+                    TokenType::LessThan => "blss",
+                    _ => panic!(),
                 };
-                // If its a boolean, return an error
 
-                return Err(format!("unimplemented for ordering comparisons!"));
-            },
-
-            TokenType::EqualTo | TokenType::NotEqualTo => {
-                // Use the if temp number
-                let if_temp = table.if_temp();
+                let bool_temp = table.bool_temp();
 
                 // We don't need to type check for comparison because both are stored as integers
-                commands.push(format!("cmp {} {}", s1.location(), s2.location()));
-                commands.push(format!("beq $eq{}", if_temp));
+                commands.push(format!("cmpw {} {}", s1.location(), s2.location()));
+                commands.push(format!("{} $btrue{}", comp, bool_temp));
                 commands.push(format!("movw 0 {}", dest.location()));
-                commands.push(format!("jmp $endif{}", if_temp));
-                commands.push(format!("movw 1 {}", dest.location()));
-                commands.push(format!("$endif{}", if_temp));
+                commands.push(format!("jmp $bend{}", bool_temp));
+                commands.push(format!("$btrue{} movw 1 {}", bool_temp, dest.location()));
+                commands.push(format!("$bend{}", bool_temp));
 
                 return Ok(commands);
             },
@@ -554,12 +586,6 @@ impl ExpressionParser {
         log!("<YASLC/ExpressionParser> Generated operation for reduction: '{}'", full_op);
 
         commands.push(full_op);
-
-        // Create the combination expression
-        let c = Expression::Combined(dest.clone());
-
-        // Push the combination expression to the stack
-        stack.push(c);
 
         Ok(commands)
     }
@@ -632,12 +658,12 @@ impl ExpressionParser {
             log!("<YASLC/ExpressionParser> Popped token for conversion to expression: {}",t);
 
             // Attempt to convert it to an expression
-            if let Some(e) = Expression::from_token(t) {
+            if let Some(e) = Expression::from_token(t.clone()) {
                 expressions.push(e);
             } else {
                 // Converting to an expression failed likely because it is an invalid token
                 // Stop all conversion and return
-                println!("<YASLC/ExpressionParser> Error: invalid token in expression.");
+                println!("<YASLC/ExpressionParser> Error: invalid token {} in expression.", t);
                 return None;
             }
         }
@@ -691,15 +717,17 @@ impl ExpressionParser {
         }
 
         log!("<YASLC/ExpressionParser> Successfully converted infix expressions to postfix.");
-        // for e in stack.iter() {
-        //     match e {
-        //         &Expression::Operand(ref t) => match t{
-        //             &OType::Static(l) | &OType::Variable(l) => log!("\t{}", l),
-        //         },
-        //         &Expression::Operator(ref t) => log!("\t{}", t),
-        //         _ => {},
-        //     };
-        // }
+        log!(NNL "[");
+        for e in stack.iter() {
+            match e {
+                &Expression::Operand(ref t) => match t{
+                    &OType::Static(ref l) | &OType::Variable(ref l) => log!(NNL "{}, ", l),
+                },
+                &Expression::Operator(ref t) => log!(NNL "{}, ", t),
+                _ => {},
+            };
+        }
+        log!("]");
 
         Some(stack)
     }
