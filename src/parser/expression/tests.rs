@@ -141,25 +141,80 @@ fn e_parser_identifier_fail() {
 }
 
 #[test]
+// Tests "true"
 fn e_parser_bool_one() {
     eparser_helper!(TS "true", TokenType::Keyword(KeywordType::True));
 }
 
 #[test]
-#[ignore]
+// Tests "true AND false"
 fn e_parser_bool_and() {
     eparser_helper!(TS "true", TokenType::Keyword(KeywordType::True),
         "AND", TokenType::Keyword(KeywordType::And),
+        "false", TokenType::Keyword(KeywordType::False)
+    );
+}
+
+#[test]
+// Tests "5 < 4"
+fn e_parser_int_comp() {
+    eparser_helper!(TS "5", TokenType::Number,
+        "<", TokenType::LessThan,
+        "4", TokenType::Number
+    );
+}
+
+#[test]
+// Tests "5 < 4 == true" (it is false)
+fn e_parser_combined() {
+    eparser_helper!(TS
+        "5", TokenType::Number,
+        "<", TokenType::LessThan,
+        "4", TokenType::Number,
+        "==", TokenType::EqualTo,
         "true", TokenType::Keyword(KeywordType::True)
     );
 }
 
 #[test]
-#[ignore]
-fn e_parser_int_comp() {
-    eparser_helper!(TS "5", TokenType::Number,
+// Tests "5 < 4 == 10 >= 9" (it is false)
+fn e_parser_int_comp_double() {
+    eparser_helper!(TS
+        "5", TokenType::Number,
         "<", TokenType::LessThan,
-        "4", TokenType::Number
+        "4", TokenType::Number,
+        "==", TokenType::EqualTo,
+        "10", TokenType::Number,
+        ">=", TokenType::GreaterThanOrEqual,
+        "9", TokenType::Number
+    );
+}
+
+#[test]
+// Tests "5 <= 4 + 1 == 10 >= 9" (it is true)
+fn e_parser_int_comp_double_arith() {
+    eparser_helper!(TS
+        "5", TokenType::Number,
+        "<", TokenType::LessThanOrEqual,
+        "4", TokenType::Number,
+        "==", TokenType::EqualTo,
+        "10", TokenType::Number,
+        ">=", TokenType::GreaterThanOrEqual,
+        "9", TokenType::Number
+    );
+}
+
+#[test]
+// Tests "5 <= 4 + 1 == 2 + 10 >= 9 + 10" (it is false)
+fn e_parser_int_comp_double_arith2() {
+    eparser_helper!(TS
+        "5", TokenType::Number,
+        "<", TokenType::LessThanOrEqual,
+        "4", TokenType::Number,
+        "==", TokenType::EqualTo,
+        "10", TokenType::Number,
+        ">=", TokenType::GreaterThanOrEqual,
+        "9", TokenType::Number
     );
 }
 
