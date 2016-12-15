@@ -6,6 +6,8 @@ macro_rules! test_file {
     ($file_name:expr) => (
         let r = compile_file(format!("p6-ptests/{}", $file_name));
 
+        // Check output against the expected output
+
         match r {
             ParserResult::Success => {},
             _ => panic!(),

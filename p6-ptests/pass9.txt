@@ -8,7 +8,7 @@ const can_run = bool;
 proc fib(n)
   var x : int;
   begin
-    if (n == 0) then
+    if n == 0 then
       // Can return a value?
   end.
 

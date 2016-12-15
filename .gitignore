@@ -1,9 +1,10 @@
 target
 Cargo.lock
 
-### YASL ###
+### YASL and PALI Emulator ###
 *.yasl
 *.txt
+PALI/*
 
 # Created by https://www.gitignore.io/api/rust,emacs
 

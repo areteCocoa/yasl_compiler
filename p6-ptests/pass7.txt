@@ -2,18 +2,18 @@ program demo;
 
 // VII. Procedure code generation with variables
 
-const x = bool;
+const x = true;
 
-proc foo
+proc foo;
   var x : int;
   begin
-    x = 5
+    x = 5;
     print x
-  end.
+  end;
 
 begin
   x = true;
   if (x) then
-    foo()
+    foo
   end
 end.

@@ -4,21 +4,21 @@ program pass10;
 
 const x = 7;
 
-proc one(t)
+proc one(t : int)
 
   var i : int;
   var x : bool;
 
-  proc two(tt)
+  proc two(tt : int)
     const x = false;
     begin
       if tt mod 2 == 0 then
         print tt
-      end
     end
   begin
     i = 0;
     while i < t do
+    begin
       two(i)
       i = i + 1
     end

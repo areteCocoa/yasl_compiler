@@ -5,7 +5,8 @@ program demo;
 var x : int;
 begin
   x = 0;
-  while (x < 5) do
+  while x < 5 do
+  begin
     x = x + 1
   end
 end.
