@@ -43,7 +43,7 @@ macro_rules! eparser_helper {
 
 macro_rules! has_command {
     ($commands:expr, $index:expr, $expected:expr) => (
-        println!("Comparing command '{}' to expected command'{}'", $commands[$index], $expected)
+        println!("Comparing command '{}' to expected command'{}'", $commands[$index], $expected);
         match $commands[$index] == format!($expected) {
             true => {
                 println!("command[{}] '{}' was the expected input {}",
@@ -144,6 +144,24 @@ fn e_parser_identifier_fail() {
 // Tests "true"
 fn e_parser_bool_one() {
     eparser_helper!(TS "true", TokenType::Keyword(KeywordType::True));
+}
+
+#[test]
+// Tests "true == false"
+fn e_parser_bool_eq() {
+    eparser_helper!(TS "true", TokenType::Keyword(KeywordType::True),
+        "==", TokenType::EqualTo,
+        "false", TokenType::Keyword(KeywordType::False)
+    );
+}
+
+#[test]
+// Tests "true <> false"
+fn e_parser_bool_neq() {
+    eparser_helper!(TS "true", TokenType::Keyword(KeywordType::True),
+        "<>", TokenType::NotEqualTo,
+        "false", TokenType::Keyword(KeywordType::False)
+    );
 }
 
 #[test]

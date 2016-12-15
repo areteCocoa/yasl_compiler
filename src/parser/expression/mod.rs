@@ -26,19 +26,19 @@ macro_rules! log {
 }
 
 // Helper function
-fn type_for_token(l: Token) -> Option<SymbolValueType> {
+fn type_for_string(l: &String) -> Option<SymbolValueType> {
     // If the lexeme is numeric it's a number, otherwise if its "true"/"false its a boolean"
     // if its neither then crash
-    match l.lexeme().parse::<i32>() {
+    match l.parse::<i32>() {
         Ok(n) => {
             // Its a number
             Some(SymbolValueType::Int)
         },
         Err(_) => {
             // It is not a number, check if it is a boolean
-            if l.lexeme() == "true" {
+            if l == "true" {
                 Some(SymbolValueType::Bool)
-            } else if l.lexeme() == "false" {
+            } else if l == "false" {
                 Some(SymbolValueType::Bool)
             } else {
                 // We don't know what it is, crash.
@@ -47,6 +47,15 @@ fn type_for_token(l: Token) -> Option<SymbolValueType> {
             }
         }
     }
+}
+
+#[derive(PartialEq, Clone)]
+enum OType {
+    // String is the value of the variable
+    Static(String),
+
+    // String is the name of the varible and symbol
+    Variable(String)
 }
 
 /// Expression represents a single piece of expressions.
@@ -64,7 +73,7 @@ enum Expression {
     // Example: 2, 5, 7.5, etc
     ///
     // The string is stored to have the value of the operand or its name.
-    Operand(Token),
+    Operand(OType),
 
     /// A combined expression using three other expressions, in
     /// operand - operator - operand format.
@@ -77,7 +86,7 @@ impl Expression {
     fn from_token(t: Token) -> Option<Expression> {
         match t.token_type() {
             // Constant numbers
-            TokenType::Number => Some(Expression::Operand(t)),
+            TokenType::Number => Some(Expression::Operand(OType::Static(t.lexeme()))),
 
             // Operators
             TokenType::Plus | TokenType::Minus | TokenType::Star | TokenType::Keyword(KeywordType::Div)
@@ -85,18 +94,14 @@ impl Expression {
             | TokenType::GreaterThanOrEqual | TokenType::LessThanOrEqual | TokenType::EqualTo
             | TokenType::NotEqualTo => Some(Expression::Operator(t.token_type())),
 
-            // TokenType::Keyword(KeywordType::Print) => Some(Expression::Operator(t.token_type())),
-
             // Variables and Constants
-            TokenType::Identifier => Some(Expression::Operand(t)),
+            TokenType::Identifier => Some(Expression::Operand(OType::Variable(t.lexeme()))),
 
             // true and false
-            TokenType::Keyword(KeywordType::True) | TokenType::Keyword(KeywordType::False) =>
-                Some(Expression::Operand(t)),
+            TokenType::Keyword(KeywordType::True) => Some(Expression::Operand(OType::Static(format!("1")))),
+            TokenType::Keyword(KeywordType::False) => Some(Expression::Operand(OType::Static(format!("0")))),
 
-            _ => {
-                None
-            },
+            _ => None,
         }
     }
 }
@@ -209,14 +214,17 @@ impl fmt::Display for Expression {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             &Expression::Operator(ref t) => {
-                write!(f, "{}", t)
+                write!(f, "<Expr: Operator, {}>", t)
             },
             &Expression::Operand(ref v) => {
-                write!(f, "{}", v)
-            }
+                match v {
+                    &OType::Variable(ref t) => write!(f, "<Expr: Operand, {}>", t),
+                    &OType::Static(ref l) => write!(f, "<Expr: StaticOperand, {}>", l),
+                }
+            },
             &Expression::Combined(ref s) => {
-                write!(f, "{:?}", s)
-            }
+                write!(f, "<Expr: Combined, {:?}>", s)
+            },
         }
     }
 }
@@ -324,32 +332,33 @@ impl ExpressionParser {
     }
 
     fn f_symbol(mut stack: Vec<Expression>, mut table: SymbolTable) -> (Option<Symbol>, Vec<String>) {
+        if stack.len() == 0 {
+            panic!("<YASLC/ExpressionParser> Internal error attempted to get the final symbol of an expression but it was not found!");
+        }
+
         match stack.remove(0) {
+            // A combined expression
             Expression::Combined(s) => (Some(s), Vec::<String>::new()),
-            Expression::Operand(t) => {
-                // It is a single operand
-                match t.is_type(TokenType::Identifier) {
-                    // It is in the symbol table
-                    true => {
-                        let symbol = match table.get(&*t.lexeme()) {
+
+            // A single operand
+            Expression::Operand(o_type) => {
+                match o_type {
+                    OType::Static(l) => {
+                        let s = table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
+                        // TODO: Is the correct format for constants "^"?
+                        let c = format!("movw {} +{}@R{}", l, s.offset(), s.register());
+                        let mut commands = Vec::<String>::new();
+                        commands.push(c);
+                        (Some(s.clone()), commands)
+                    },
+                    OType::Variable(t) => {
+                        let symbol = match table.get(&*t) {
                             Some(s) => s,
                             None => {
                                 panic!("<YASLC/ExpressionParser> Attempted to use a symbol that was not found in the symbol table! This is very unexpected...");
                             }
                         };
                         (Some(symbol.clone()), Vec::<String>::new())
-                    },
-                    // It is a number and we can use it literally
-                    // For continuity we will push it as a temp variable so we can use
-                    // it as a symbol to get all the code support for symbol arithmatic
-                    false => {
-
-                        let s = table.temp(SymbolType::Variable(type_for_token(t.clone()).unwrap()));
-                        // TODO: Is the correct format for constants "^"?
-                        let c = format!("movw ^{} +{}@R{}", t.lexeme(), s.offset(), s.register());
-                        let mut commands = Vec::<String>::new();
-                        commands.push(c);
-                        (Some(s.clone()), commands)
                     }
                 }
             }
@@ -391,18 +400,22 @@ impl ExpressionParser {
         // Match the first expression because if it is a temp variable we can operate on that
         // and not have to create another temp variable
         let s1 = match e1 {
-            Expression::Operand(t) => {
-                if t.is_type(TokenType::Identifier) {
-                    match table.get(&*t.lexeme()) {
-                        Some(x) => x.clone(),
-                        None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
+            Expression::Operand(o_type) => {
+                match o_type {
+                    // If its a variable
+                    OType::Variable(l) => {
+                        match table.get(&*l) {
+                            Some(x) => x.clone(),
+                            None => panic!("Attempted to use variable '{}' that has not been declared!", l),
+                        }
+                    },
+
+                    // It is a constant, initialize to a temp
+                    OType::Static(l) => {
+                        let temp = table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
+                        commands.push(format!("movw ^{} +{}@R{}", l, temp.offset(), temp.register()));
+                        temp
                     }
-                } else {
-                    let temp = table.temp(SymbolType::Variable(type_for_token(t.clone()).unwrap()));
-
-                    commands.push(format!("movw ^{} +{}@R{}", t.lexeme(), temp.offset(), temp.register()));
-
-                    temp
                 }
             },
             Expression::Combined(s) => s,
@@ -410,18 +423,22 @@ impl ExpressionParser {
         };
 
         let s2 = match e2 {
-            Expression::Operand(t) => {
-                if t.is_type(TokenType::Identifier) {
-                    match table.get(&*t.lexeme()) {
-                        Some(x) => x.clone(),
-                        None => panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme()),
+            Expression::Operand(o_type) => {
+                match o_type {
+                    // If its a variable
+                    OType::Variable(l) => {
+                        match table.get(&*l) {
+                            Some(x) => x.clone(),
+                            None => panic!("Attempted to use variable '{}' that has not been declared!", l),
+                        }
+                    },
+
+                    // It is a constant, initialize to a temp
+                    OType::Static(l) => {
+                        let temp = table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
+                        commands.push(format!("movw ^{} +{}@R{}", l, temp.offset(), temp.register()));
+                        temp
                     }
-                } else {
-                    let temp = table.temp(SymbolType::Variable(type_for_token(t.clone()).unwrap()));
-
-                    commands.push(format!("movw ^{} +{}@R{}", t.lexeme(), temp.offset(), temp.register()));
-
-                    temp
                 }
             },
             Expression::Combined(s) => s,
@@ -488,7 +505,40 @@ impl ExpressionParser {
                 stack.push(c);
 
                 return Ok(commands);
+            },
+
+            TokenType::GreaterThan | TokenType::LessThan | TokenType::GreaterThanOrEqual
+            | TokenType::LessThanOrEqual => {
+                let vt = match s1.symbol_type() {
+                    &SymbolType::Variable(ref vt) | &SymbolType::Constant(ref vt) => {
+                        vt
+                    },
+                    _ => return Err(format!("<YASLC/ExpressionParser> Found an error that should have been caught a long time ago...")),
+                };
+                // If its a boolean, return an error
+
+                return Err(format!("unimplemented for ordering comparisons!"));
+            },
+
+            TokenType::EqualTo | TokenType::NotEqualTo => {
+                // Use the if temp number
+                let if_temp = table.if_temp();
+
+                // We don't need to type check for comparison because both are stored as integers
+                commands.push(format!("cmp {} {}", s1.location(), s2.location()));
+                commands.push(format!("beq $eq{}", if_temp));
+                commands.push(format!("movw 0 {}", dest.location()));
+                commands.push(format!("jmp $endif{}", if_temp));
+                commands.push(format!("movw 1 {}", dest.location()));
+                commands.push(format!("$endif{}", if_temp));
+
+                return Ok(commands);
+            },
+
+            TokenType::Keyword(KeywordType::And) | TokenType::Keyword(KeywordType::Or) => {
+                return Err(format!("unimplemented for joining boolean expressions!"));
             }
+
             n => {
                 panic!("Unrecognized operator '{}' in expression!", n)
             },
@@ -521,30 +571,32 @@ impl ExpressionParser {
         match e.clone() {
             // The expression is an operand but may be an identifier (variable)
             // or a constant number
-            Expression::Operand(t) => {
+            Expression::Operand(o_type) => {
                 // Check if it an identifier or constant number
-                if t.is_type(TokenType::Identifier) {
-                    // Check that the variable has been declared
-                    if let Some(s) = table.get(&*t.lexeme()) {
-                        match s.symbol_type {
-                            SymbolType::Procedure => {
-                                // Fail, we can't use procedures in expressions
-                                panic!("Attempted to use a procedure as a variable in an expression!");
+                match o_type {
+                    OType::Variable(l) => {
+                        // Check that the variable has been declared
+                        if let Some(s) = table.get(&*l) {
+                            match s.symbol_type {
+                                SymbolType::Procedure => {
+                                    // Fail, we can't use procedures in expressions
+                                    panic!("Attempted to use a procedure as a variable in an expression!");
+                                }
+                                _ => {}
                             }
-                            _ => {}
+                            // Success, push the operand to the stack
+                            stack.push(e);
+                            return Ok(None);
+                        } else {
+                            panic!("Attempted to use variable '{}' that has not been declared!", l);
                         }
-                        // Success, push the operand to the stack
+                    },
+                    OType::Static(l) => {
+                        // It is a constant number, just push to the stack
                         stack.push(e);
                         return Ok(None);
-                    } else {
-                        panic!("Attempted to use variable '{}' that has not been declared!", t.lexeme());
                     }
-                } else {
-                    // It is a constant number, just push to the stack
-                    stack.push(e);
-                    return Ok(None);
                 }
-
             },
 
             // The expression is an operator, we need to pop two operands and reduce them
@@ -577,7 +629,7 @@ impl ExpressionParser {
             // Get the front token
             let t = tokens.remove(0);
 
-            log!("{}",t);
+            log!("<YASLC/ExpressionParser> Popped token for conversion to expression: {}",t);
 
             // Attempt to convert it to an expression
             if let Some(e) = Expression::from_token(t) {
@@ -639,13 +691,15 @@ impl ExpressionParser {
         }
 
         log!("<YASLC/ExpressionParser> Successfully converted infix expressions to postfix.");
-        for e in stack.iter() {
-            match e {
-                &Expression::Operand(ref t) => log!("\t{:?}", t.lexeme()),
-                &Expression::Operator(ref t) => log!("\t{}", t),
-                _ => {},
-            };
-        }
+        // for e in stack.iter() {
+        //     match e {
+        //         &Expression::Operand(ref t) => match t{
+        //             &OType::Static(l) | &OType::Variable(l) => log!("\t{}", l),
+        //         },
+        //         &Expression::Operator(ref t) => log!("\t{}", t),
+        //         _ => {},
+        //     };
+        // }
 
         Some(stack)
     }

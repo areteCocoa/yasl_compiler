@@ -38,6 +38,12 @@ pub struct SymbolTable {
     next_offset: u32,
 
     next_temp: u32,
+
+    next_if_temp: u32,
+
+    next_while_temp: u32,
+
+    next_proc_temp: u32,
 }
 
 impl SymbolTable {
@@ -50,6 +56,9 @@ impl SymbolTable {
             register: 0,
             next_offset: 0,
             next_temp: 0,
+            next_if_temp: 0,
+            next_while_temp: 0,
+            next_proc_temp: 0,
         }
     }
 
@@ -60,6 +69,9 @@ impl SymbolTable {
         let register = self.register;
         let n_o = self.next_offset;
         let n_t = self.next_temp;
+        let n_it = self.next_if_temp;
+        let n_wt = self.next_while_temp;
+        let n_pt = self.next_proc_temp;
 
         let pointer_old = Box::<SymbolTable>::new(self);
 
@@ -70,6 +82,9 @@ impl SymbolTable {
             register: register,
             next_offset: n_o,
             next_temp: n_t,
+            next_if_temp: n_it,
+            next_while_temp: n_wt,
+            next_proc_temp: n_pt,
         }
     }
 
@@ -160,6 +175,16 @@ impl SymbolTable {
         self.next_temp = 0;
     }
 
+    pub fn if_temp(&mut self) -> u32 {
+        self.next_if_temp += 1;
+        self.next_if_temp - 1
+    }
+
+    pub fn while_temp(&mut self) -> u32 {
+        self.next_while_temp += 1;
+        self.next_while_temp - 1
+    }
+
     pub fn down_register(&mut self) {
         if self.register <= 0 {
             panic!("<YASLC/SymbolTable> Internal error: attempted to move down a register when we were already at 0!");
@@ -216,10 +241,14 @@ pub struct Symbol {
 impl Symbol {
     pub fn is_temp(&self) -> bool {
         if self.identifier.len() == 0 {
-            log!("<YASLC/SymbolTable> Warning, found a symbol with an empty identifier. This is bad.");
+            panic!("<YASLC/SymbolTable> Warning, found a symbol with an empty identifier. This is bad.");
             return false;
         }
         self.identifier.index(0..1) == "$"
+    }
+
+    pub fn location(&self) -> String {
+        format!("+{}@R{}", self.offset, self.register)
     }
 
     pub fn identifier(&self) -> &String {
