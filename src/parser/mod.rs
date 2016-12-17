@@ -16,7 +16,7 @@ use self::file_generator::file_from;
 use self::expression::ExpressionParser;
 
 /// Set true if you want the parser to log all its progress, false otherwise.
-static mut VERBOSE: bool = false;
+static mut VERBOSE: bool = true;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {

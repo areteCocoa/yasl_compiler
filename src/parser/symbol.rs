@@ -7,7 +7,7 @@
 use std::ops::Index;
 
 /// Set to true if you want the logs of symbol functionality, false otherwise.
-static mut VERBOSE: bool = false;
+static mut VERBOSE: bool = true;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {

@@ -14,7 +14,7 @@ use std::cmp::Ordering;
 use std::fmt;
 
 /// Set to true if you want the expression parser to print its process.
-static mut VERBOSE: bool = false;
+static mut VERBOSE: bool = true;
 
 macro_rules! log {
     ($message:expr $(,$arg:expr)*) => {
@@ -397,7 +397,12 @@ impl ExpressionParser {
             Expression::Operand(o_type) => {
                 match o_type {
                     OType::Static(l) => {
-                        let s = self.table.temp(SymbolType::Variable(type_for_string(&l).unwrap()));
+                        let s = self.table.temp(SymbolType::Variable(
+                            match type_for_string(&l) {
+                                Some(so) => so,
+                                None => panic!("Error: Could not create a temporary variable for value because of indeterminable type!"),
+                            }
+                        ));
                         self.push_command(format!("movw #{} {}", l, s.location()));
                         Some(s.clone())
                     },
